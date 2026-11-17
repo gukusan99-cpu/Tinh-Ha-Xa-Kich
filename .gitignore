@@ -1,0 +1,18 @@
+# Godot 4
+.godot/
+/android/
+*.translation
+export_credentials.cfg
+/build/
+
+# Node.js (máy chủ)
+node_modules/
+dist/
+coverage/
+*.log
+.env
+
+# Hệ điều hành / editor
+.DS_Store
+Thumbs.db
+.vscode/
