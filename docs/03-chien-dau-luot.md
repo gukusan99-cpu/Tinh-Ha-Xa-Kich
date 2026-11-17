@@ -14,8 +14,8 @@ Tài liệu này mô tả luật chơi. Chi tiết đồng bộ mạng và cấu
 - Chỉnh góc và lực không tốn thời gian ngắm ngoài khung 30 giây.
 
 ## Cảnh báo trước một lượt
-- Mọi vùng ảnh hưởng (hố thiên thạch, vùng cháy, vùng sao băng, vùng độc) được hiển thị ở lượt trước khi hiệu ứng xảy ra.
-- Người chơi có thể né hoặc chuẩn bị.
+- Súng vùng (thiên thạch, sao băng) **nổ ngay** trong lượt bắn, như súng thường (chốt 2026-11-18).
+- Chỉ **vùng hiệu ứng kéo dài** trên mặt đất (vùng cháy, vùng độc) được hiển thị một lượt trước khi bắt đầu gây sát thương. Người chơi có thể né hoặc chuẩn bị.
 
 ## Độ lệch quỹ đạo
 - Lệch tối đa ±3 ô, giảm khi chỉ số Chính xác tăng.
