@@ -29,4 +29,16 @@ Game online nhập vai có bắn theo lượt đồng thời. Người chơi đi
 - Giai đoạn hiện tại được ghi trong `docs/05-tien-do.md`. Cập nhật file này khi xong mỗi giai đoạn.
 
 ## Lệnh thường dùng
-_Sẽ điền khi khung dự án được tạo (lệnh chạy Godot, chạy máy chủ, chạy test)._
+Trên máy này `godot` và `git` chưa có trong PATH:
+- Godot: `$godot = "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe"`
+- Git: `C:\Users\Admin\AppData\Local\GitHubDesktop\app-3.6.10\resources\app\git\cmd\git.exe` (git đi kèm GitHub Desktop)
+
+Máy chủ (chạy trong `server/`):
+- Cài: `npm install`
+- Chạy khi phát triển: `npm run dev` (cổng 8080, đổi bằng `$env:PORT`)
+- Test: `npm test`, kiểm kiểu: `npm run typecheck`, build: `npm run build`, chạy bản build: `npm start`
+
+Client Godot (chạy ở thư mục gốc):
+- Mở editor: `& $godot --path . --editor`
+- Test đơn vị: `& $godot --headless --path . --script res://tests/run_tests.gd`
+- Test nối máy chủ (cần máy chủ đang chạy): `& $godot --headless --path . --script res://tests/e2e_probe.gd`
