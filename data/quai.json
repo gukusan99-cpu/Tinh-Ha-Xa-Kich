@@ -15,7 +15,7 @@
     {
       "id": "am_thach_gai",
       "ten": "Ám Thạch Gai",
-      "hp": 75,
+      "hp": 68,
       "gunId": "gai_lua",
       "aiErrorTiles": 7,
       "expReward": 30,

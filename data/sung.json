@@ -136,7 +136,7 @@
       "sign": "xu_nu",
       "kind": "projectile",
       "damage": 36,
-      "blastRadiusTiles": 1.5,
+      "blastRadiusTiles": 2,
       "energyCost": 0,
       "cooldownTurns": 0,
       "slow": {
