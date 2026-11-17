@@ -8,6 +8,7 @@ var character: Variant = null
 var _screen: Node = null
 var _pending_world := {}
 var _status: Label
+var _pvp_lbl: Label
 var _reconnect: Button
 var _toast: Label
 var _toast_age := 99.0
@@ -45,6 +46,8 @@ func _build_topbar() -> void:
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(bar)
 	_status = UiKit.label("", 18, Color(0.8, 0.9, 1.0))
+	_pvp_lbl = UiKit.label("", 16, Color(1.0, 0.85, 0.6))
+	bar.add_child(_pvp_lbl)
 	bar.add_child(_status)
 	_reconnect = UiKit.button("Kết nối lại", 18, 36.0)
 	_reconnect.visible = false
@@ -68,6 +71,10 @@ func _show_toast(text: String) -> void:
 	_toast_age = 0.0
 
 
+func _refresh_pvp() -> void:
+	_pvp_lbl.text = UiText.pvp_record(character.get("pvp")) + "  " if typeof(character) == TYPE_DICTIONARY and character.get("pvp") != null else ""
+
+
 func _refresh_status() -> void:
 	if Net.online:
 		var ping := "-" if Net.latency_ms < 0 else str(Net.latency_ms)
@@ -88,6 +95,7 @@ func _on_disconnected() -> void:
 	_reconnect.visible = true
 	_pending_world = {}
 	character = null
+	_refresh_pvp()
 	if not (_screen is LoginScreen):
 		_show_login()
 	_screen.set_online(false)
@@ -153,6 +161,7 @@ func _on_message(msg: Dictionary) -> void:
 			_sync_clock(msg, true)
 		"auth_ok":
 			character = msg.get("character")
+			_refresh_pvp()
 			if character == null:
 				_show_character()
 			else:
@@ -162,6 +171,7 @@ func _on_message(msg: Dictionary) -> void:
 				_screen.on_message(msg)
 		"character":
 			character = msg.get("character")
+			_refresh_pvp()
 			if _screen is CharacterScreen:
 				Net.send_json(Protocol.build_enter_world())
 		"world_state":
@@ -174,6 +184,9 @@ func _on_message(msg: Dictionary) -> void:
 		"world_tick":
 			if _screen is WorldScreen:
 				_screen.on_tick(msg)
+		"challenge_sent", "challenge_received", "challenge_closed":
+			if _screen is WorldScreen:
+				_screen.on_challenge_message(msg)
 		"match_start":
 			_show_battle(msg)
 		"phase":
@@ -186,6 +199,7 @@ func _on_message(msg: Dictionary) -> void:
 		"match_end":
 			if msg.get("character") != null:
 				character = msg["character"]
+				_refresh_pvp()
 			if _screen is BattleScreen:
 				_screen.on_message(msg)
 		"error":

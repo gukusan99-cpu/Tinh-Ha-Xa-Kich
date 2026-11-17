@@ -70,6 +70,19 @@ static func build_aim_preview(gun_id: String, angle: float, power: float, facing
 	return _encode("aim_preview", {"gunId": gun_id, "angle": angle, "power": clampf(power, 0.0, 100.0), "facing": f})
 
 
+# ---- Thách đấu PvP ----
+
+static func build_challenge(target_entity_id: int) -> String:
+	return _encode("challenge", {"targetEntityId": target_entity_id})
+
+
+static func build_challenge_reply(challenge_id: String, accept: bool) -> String:
+	return _encode("challenge_reply", {"challengeId": challenge_id, "accept": accept})
+
+
+static func build_challenge_cancel(challenge_id: String) -> String:
+	return _encode("challenge_cancel", {"challengeId": challenge_id})
+
 ## Trả về Dictionary đã kiểm tra hợp lệ, hoặc {} nếu text không hợp lệ. Giới hạn 4 KB.
 static func parse(text: String) -> Dictionary:
 	return _parse(text, MAX_MESSAGE_BYTES)

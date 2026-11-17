@@ -41,3 +41,34 @@ static func phase_name(phase: String) -> String:
 		"aim":
 			return "Ngắm bắn"
 	return phase
+
+
+static func challenge_closed(reason: String) -> String:
+	match reason:
+		"accepted":
+			return "Lời thách đấu đã được nhận."
+		"declined":
+			return "Lời thách đấu bị từ chối."
+		"expired":
+			return "Lời thách đấu đã hết hạn."
+		"cancelled":
+			return "Lời thách đấu đã bị hủy."
+		"unavailable":
+			return "Đối thủ không còn sẵn sàng."
+	return "Lời thách đấu đã đóng."
+
+
+static func pvp_record(pvp: Variant) -> String:
+	if typeof(pvp) != TYPE_DICTIONARY:
+		return ""
+	return "PvP: %dT - %dB - %dH" % [int(pvp.get("wins", 0)), int(pvp.get("losses", 0)), int(pvp.get("draws", 0))]
+
+static func pvp_result(result: String) -> String:
+	match result:
+		"win":
+			return "Thắng"
+		"lose":
+			return "Thua"
+		"draw":
+			return "Hòa"
+	return result

@@ -7,7 +7,7 @@ signal finished
 
 const MOVE_ANIM_SPEED := 8.0   # ô/giây, chỉ cho hoạt ảnh
 const FALL_ANIM_SPEED := 14.0
-const TOP_BAR := 56.0
+const TOP_BAR := 84.0
 const BOTTOM_PANEL := 250.0
 const AIM_LINE_TILES := 2.5
 const AIM_PREVIEW_PER_SEC := 5.0   # máy chủ giới hạn tối đa 5 lần/giây
@@ -29,6 +29,8 @@ var _fx := []
 var _terrain: Terrain
 var _units := {}        # id -> Dictionary
 var _you := -1
+var _pvp := false
+var _vs_lbl: Label
 var _max_turns := 0
 var _turn := 0
 var _phase := ""
@@ -71,6 +73,7 @@ func setup(msg: Dictionary, balance: Dictionary) -> void:
 	var map: Dictionary = msg.get("map", {})
 	_terrain = Terrain.from_rows(map.get("rows", []), int(map.get("width", -1)), int(map.get("height", -1)))
 	_you = int(msg.get("you", -1))
+	_pvp = String(msg.get("mode", "pve")) == "pvp"
 	_max_turns = int(msg.get("maxTurns", 0))
 	for u in msg.get("units", []):
 		var d: Dictionary = u
@@ -106,9 +109,16 @@ func _build_ui() -> void:
 	_info = UiKit.label("", 26)
 	_info.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	_info.offset_top = 14
-	_info.offset_bottom = TOP_BAR
+	_info.offset_bottom = 50.0
 	_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	add_child(_info)
+	_vs_lbl = UiKit.label("", 20)
+	_vs_lbl.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_vs_lbl.offset_top = 50
+	_vs_lbl.offset_bottom = TOP_BAR
+	_vs_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_vs_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_vs_lbl)
 
 	_panel = PanelContainer.new()
 	_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
@@ -558,7 +568,7 @@ func _update_info() -> void:
 	var turn_txt := "Lượt %d" % _turn
 	if _max_turns > 0:
 		turn_txt += "/%d" % _max_turns
-	var txt := turn_txt
+	var txt := ("Thách đấu - " if _pvp else "") + turn_txt
 	if _mode == "replay":
 		txt += " - Đang phát lại"
 	elif _mode == "moves":
@@ -568,6 +578,27 @@ func _update_info() -> void:
 		txt += " - %s - %ds" % [UiText.phase_name(_phase), int(ceil(left))]
 	_info.text = txt
 	_status_lbl.text = _status_text
+	_vs_lbl.text = _vs_text()
+
+
+func _my_team() -> int:
+	return int(_units[_you]["team"]) if _units.has(_you) else 0
+
+
+func _is_enemy(u: Dictionary) -> bool:
+	return int(u["team"]) != _my_team()
+
+
+func _vs_text() -> String:
+	if not _pvp or not _units.has(_you):
+		return ""
+	var me: Dictionary = _units[_you]
+	var txt := "%s %d/%d" % [me["name"], maxi(int(me["hp"]), 0), int(me["maxHp"])]
+	for id in _units.keys():
+		var u: Dictionary = _units[id]
+		if _is_enemy(u):
+			txt += "   |   Đối thủ %s %d/%d" % [u["name"], maxi(int(u["hp"]), 0), int(u["maxHp"])]
+	return txt
 
 
 func _to_screen(p: Vector2) -> Vector2:
@@ -627,7 +658,7 @@ func _draw_unit(font: Font, u: Dictionary) -> void:
 	var feet: Vector2 = u["pos"]
 	var center := _to_screen(feet + Vector2(0, -_radius))
 	var is_self: bool = u["id"] == _you
-	var col := Color(0.9, 0.25, 0.25) if u["team"] == 1 else (Color(0.3, 0.85, 1.0) if is_self else Color(0.4, 0.9, 0.5))
+	var col := Color(0.9, 0.25, 0.25) if _is_enemy(u) else (Color(0.3, 0.85, 1.0) if is_self else Color(0.4, 0.9, 0.5))
 	col.a = a
 	var rpx := _radius * _ts
 	draw_circle(center, rpx, col)
@@ -640,7 +671,10 @@ func _draw_unit(font: Font, u: Dictionary) -> void:
 	draw_rect(Rect2(bp, Vector2(bw, 6)), Color(0.15, 0.05, 0.05, a))
 	var frac := clampf(float(u["hp"]) / float(u["maxHp"]), 0.0, 1.0)
 	draw_rect(Rect2(bp, Vector2(bw * frac, 6)), Color(0.3, 0.9, 0.3, a))
-	draw_string(font, bp + Vector2(-20, -4), String(u["name"]), HORIZONTAL_ALIGNMENT_CENTER, bw + 40, 14, Color(1, 1, 1, a))
+	var enemy_pvp: bool = _pvp and _is_enemy(u)
+	var nm := ("Đối thủ: " if enemy_pvp else "") + String(u["name"])
+	var nc := Color(1, 0.4, 0.4, a) if enemy_pvp else Color(1, 1, 1, a)
+	draw_string(font, bp + Vector2(-20, -4), nm, HORIZONTAL_ALIGNMENT_CENTER, bw + 40, 14, nc)
 	# Trạng thái: nhãn xếp chồng phía trên tên; khiên có vòng bao quanh
 	var statuses: Array = u["statuses"]
 	var line := 0
@@ -726,14 +760,20 @@ func _show_end() -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 16)
 	pc.add_child(box)
-	var t := UiKit.label(UiText.match_result(String(_pending_end.get("result", ""))), 48, Color(1, 0.9, 0.4))
+	var res := String(_pending_end.get("result", ""))
+	var t := UiKit.label(UiText.pvp_result(res) if _pvp else UiText.match_result(res), 48, Color(1, 0.9, 0.4))
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(t)
-	var e := UiKit.label("Kinh nghiệm nhận được: +%d EXP" % exp_gain, 28)
-	e.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(e)
 	var ch: Variant = _pending_end.get("character")
-	if typeof(ch) == TYPE_DICTIONARY:
+	if _pvp:
+		var rec := UiKit.label(UiText.pvp_record(ch.get("pvp") if typeof(ch) == TYPE_DICTIONARY else null), 28)
+		rec.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(rec)
+	else:
+		var e := UiKit.label("Kinh nghiệm nhận được: +%d EXP" % exp_gain, 28)
+		e.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(e)
+	if not _pvp and typeof(ch) == TYPE_DICTIONARY:
 		var lv := UiKit.label("Cấp %d (%d EXP)" % [int(ch.get("level", 1)), int(ch.get("exp", 0))], 24, Color(0.8, 0.9, 1.0))
 		lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		box.add_child(lv)

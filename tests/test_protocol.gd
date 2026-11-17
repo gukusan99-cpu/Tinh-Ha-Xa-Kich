@@ -129,6 +129,19 @@ func test_client_messages_under_limit() -> Array:
 	return _check([[ok, "thông điệp C→S phải ≤ 4 KB"]])
 
 
+func test_build_challenge() -> Array:
+	var d: Dictionary = JSON.parse_string(Protocol.build_challenge(42))
+	var r: Dictionary = JSON.parse_string(Protocol.build_challenge_reply("c1", true))
+	var r2: Dictionary = JSON.parse_string(Protocol.build_challenge_reply("c1", false))
+	var c: Dictionary = JSON.parse_string(Protocol.build_challenge_cancel("c9"))
+	return _check([
+		[d["type"] == "challenge" and int(d["targetEntityId"]) == 42, "challenge sai"],
+		[r["type"] == "challenge_reply" and r["challengeId"] == "c1" and r["accept"] == true, "reply accept sai"],
+		[r2["accept"] == false, "reply decline sai"],
+		[c["type"] == "challenge_cancel" and c["challengeId"] == "c9", "cancel sai"],
+		[int(d["v"]) == 1 and int(r["v"]) == 1 and int(c["v"]) == 1, "v sai"],
+	])
+
 func _check(pairs: Array) -> Array:
 	var errors := []
 	for p in pairs:
