@@ -1,9 +1,10 @@
 class_name Protocol
 extends RefCounted
-## Hàm thuần cho giao thức Giai đoạn 0 (xem docs/06-kien-truc.md). Dễ kiểm thử.
+## Hàm thuần cho giao thức (xem docs/06-kien-truc.md). Dễ kiểm thử.
+## Client chỉ gửi ý định; không bao giờ gửi kết quả.
 
 const VERSION := 1
-const MAX_MESSAGE_BYTES := 4096
+const MAX_MESSAGE_BYTES := 4096  # giới hạn C→S
 
 
 static func _envelope(type: String, fields: Dictionary = {}) -> Dictionary:
@@ -12,17 +13,71 @@ static func _envelope(type: String, fields: Dictionary = {}) -> Dictionary:
 	return msg
 
 
+static func _encode(type: String, fields: Dictionary = {}) -> String:
+	return JSON.stringify(_envelope(type, fields))
+
+
+# ---- Giai đoạn 0 ----
+
 static func build_hello(client_version: String) -> String:
-	return JSON.stringify(_envelope("hello", {"clientVersion": client_version}))
+	return _encode("hello", {"clientVersion": client_version})
 
 
 static func build_ping(seq: int) -> String:
-	return JSON.stringify(_envelope("ping", {"seq": seq}))
+	return _encode("ping", {"seq": seq})
 
 
-## Trả về Dictionary đã kiểm tra hợp lệ, hoặc {} nếu text không hợp lệ.
+# ---- Tài khoản ----
+
+static func build_register(username: String, password: String) -> String:
+	return _encode("register", {"username": username, "password": password})
+
+
+static func build_login(username: String, password: String) -> String:
+	return _encode("login", {"username": username, "password": password})
+
+
+static func build_create_character(char_name: String, sign: String) -> String:
+	return _encode("create_character", {"name": char_name.strip_edges(), "sign": sign})
+
+
+# ---- Thế giới ----
+
+static func build_enter_world() -> String:
+	return _encode("enter_world")
+
+
+## x, y: toạ độ theo ô (số thực).
+static func build_move_to(x: float, y: float) -> String:
+	return _encode("move_to", {"x": x, "y": y})
+
+
+# ---- Trận ----
+
+static func build_battle_move(col: int) -> String:
+	return _encode("battle_move", {"col": col})
+
+
+## angle: độ; power: 0..100 (kẹp); facing: -1 hoặc 1 (giá trị khác được chuẩn hoá theo dấu).
+static func build_battle_shot(angle: float, power: float, facing: int) -> String:
+	var f := -1 if facing < 0 else 1
+	return _encode("battle_shot", {"angle": angle, "power": clampf(power, 0.0, 100.0), "facing": f})
+
+
+## Trả về Dictionary đã kiểm tra hợp lệ, hoặc {} nếu text không hợp lệ. Giới hạn 4 KB.
 static func parse(text: String) -> Dictionary:
-	if text.is_empty() or text.to_utf8_buffer().size() > MAX_MESSAGE_BYTES:
+	return _parse(text, MAX_MESSAGE_BYTES)
+
+
+## Cho thông điệp S→C (không giới hạn 4 KB: world_state, turn_result có thể lớn).
+static func parse_server(text: String) -> Dictionary:
+	return _parse(text, 0)
+
+
+static func _parse(text: String, max_bytes: int) -> Dictionary:
+	if text.is_empty():
+		return {}
+	if max_bytes > 0 and text.to_utf8_buffer().size() > max_bytes:
 		return {}
 	var json := JSON.new()
 	if json.parse(text) != OK:

@@ -44,6 +44,8 @@ func get_server_url() -> String:
 func connect_to_server() -> void:
 	disconnect_from_server()
 	_peer = WebSocketPeer.new()
+	_peer.inbound_buffer_size = 1 << 20  # turn_result/world_state có thể lớn hơn 64 KB mặc định
+	_peer.max_queued_packets = 4096
 	var url := get_server_url()
 	var err := _peer.connect_to_url(url)
 	if err != OK:
@@ -130,7 +132,7 @@ func _send_ping() -> void:
 
 
 func _handle_text(text: String) -> void:
-	var msg := Protocol.parse(text)
+	var msg := Protocol.parse_server(text)
 	if msg.is_empty():
 		push_warning("Net: bỏ qua thông điệp không hợp lệ")
 		return

@@ -1,7 +1,10 @@
 extends SceneTree
 ## Chạy: godot --headless --path . --script res://tests/run_tests.gd
 
-const SUITES := ["res://tests/test_protocol.gd"]
+const SUITES := [
+	"res://tests/test_protocol.gd",
+	"res://tests/test_helpers.gd",
+]
 
 
 func _init() -> void:
