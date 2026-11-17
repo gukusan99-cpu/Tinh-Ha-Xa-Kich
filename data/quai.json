@@ -4,7 +4,7 @@
       "id": "am_thach_nho",
       "ten": "Ám Thạch Nhỏ",
       "hp": 65,
-      "gunId": "thuoc_no_nho",
+      "gunId": "da_am_thach",
       "aiErrorTiles": 8,
       "expReward": 20,
       "worldSpeedTilesPerSec": 1.5,

@@ -1,7 +1,15 @@
 # 05. Tiến độ
 
 ## Giai đoạn hiện tại
-**Giai đoạn 1:** lát cắt chơi được đã chạy thông end-to-end (đăng ký → tạo nhân vật → thành → vùng săn → chạm quái → trận → về thế giới). Giai đoạn 0 đã xong.
+**Giai đoạn 2:** đã có đủ 4 cung với 12 súng, nội lực, hiệu ứng trạng thái và nội tại (`docs/07`), đã cân bằng PvE bằng mô phỏng. Còn lại của Giai đoạn 2: súng thường/hiếm chung, vùng săn thứ hai, thách đấu PvP. Giai đoạn 0 và 1 đã xong.
+
+## Giai đoạn 2
+- [x] Đặc tả `07-cung-va-sung.md`; 4 cung, 12 súng cung, nội lực, hồi chiêu, hiệu ứng, nội tại, đường ngắm Súng kính.
+- [x] Máy chủ, client, mô phỏng theo từng cung; cân bằng PvE v2.
+- [ ] Súng thường và súng hiếm chung (`02`: ba tia, liên thanh, súng hơi, laser, tơ nhện, nọc độc, phun lửa, lưới băng, dây điện).
+- [ ] Vùng săn thứ hai.
+- [ ] Thách đấu PvP (cũng là nơi đo hiệu ứng chậm/choáng/đẩy lùi).
+- [ ] Quái biết di chuyển (để hiệu ứng khống chế có giá trị trong PvE).
 
 ## Giai đoạn 1
 - [x] Đặc tả giao thức và luật vật lý trận (`06-kien-truc.md`, `server/src/battle/types.ts`).
@@ -26,6 +34,7 @@
 - Cài export template Godot 4.7.2 để xuất Web; cài Android SDK, JDK và keystore để xuất Android.
 
 ## Nhật ký thay đổi
+- 2026-11-18: Cân bằng 4 cung (mô phỏng 2000 trận mỗi cung). Súng 2 nội lực (Súng nung đỏ, Đạn lạnh, Súng nặng) tăng lên 3, vì hồi 2 mỗi lượt khiến chúng bắn được liên tục và súng cơ bản của cung bị bỏ không. Tách súng quái `da_am_thach` (35) khỏi súng chung `thuoc_no_nho` (35 → 30), để súng cung luôn hơn súng chung mà không làm quái yếu đi. Pháo đạn nổ 40 → 32, Súng nặng 60 → 44, Súng tiểu liên 14 → 12, Súng băng 30 → 40, Đạn sao 22 → 28, giảm sát thương Kim Ngưu 15% → 6%. Kết quả (bot giỏi | trung bình): Bạch Dương 93,3 | 56,5; Kim Ngưu 94,2 | 58,7; Xử Nữ 95,3 | 52,1; Bảo Bình 88,3 | 50,8. Lưu ý: hiệu ứng chậm/choáng/đẩy lùi chưa được đánh giá vì quái không di chuyển; cần đo lại khi có PvP.
 - 2026-11-18: Cân bằng PvE. `baseHp` 100 → 150, máu `am_thach_nho` 80 → 65, `aiErrorTiles` 4 → 8. Lý do: mô phỏng 2000 trận với số cũ cho bot giỏi chỉ thắng 6,6%. Số mới: giỏi 90,3%, trung bình 46,1%, ngẫu nhiên 0%, trung bình 7,2 lượt (mục tiêu `04`: giỏi ≥70%). Đã thử thêm 13 bộ số khác; bộ này gần mọi mục tiêu nhất.
 - 2026-11-18: Giai đoạn 1. Điền giá trị đề xuất `moveRangeTiles` 5, `aimPowerRange` 0–100, `maxTurnsPerMatch` 20 và các hằng số vật lý trận (lý do: cần số để chạy được, sẽ chỉnh sau mô phỏng). Cài Git for Windows 2.56.1.
 - 2026-11-18: Dựng khung Giai đoạn 0. Đổi `project.godot.txt` thành `project.godot` (Godot không nhận tên cũ). Thêm máy chủ `server/` (18 test), client Godot (6 test), `data/`, `docs/06-kien-truc.md`. Chạy thử end-to-end: client nhận `welcome` và `pong` từ máy chủ thật.
