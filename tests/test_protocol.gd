@@ -142,6 +142,16 @@ func test_build_challenge() -> Array:
 		[int(d["v"]) == 1 and int(r["v"]) == 1 and int(c["v"]) == 1, "v sai"],
 	])
 
+func test_build_set_loadout() -> Array:
+	var d: Dictionary = JSON.parse_string(Protocol.build_set_loadout(["laser", "ba_tia"]))
+	var e: Dictionary = JSON.parse_string(Protocol.build_set_loadout([]))
+	return _check([
+		[d["type"] == "set_loadout" and int(d["v"]) == 1, "type/v sai"],
+		[d["gunIds"] == ["laser", "ba_tia"], "gunIds sai"],
+		[e["gunIds"] == [], "loadout rỗng"],
+	])
+
+
 func _check(pairs: Array) -> Array:
 	var errors := []
 	for p in pairs:

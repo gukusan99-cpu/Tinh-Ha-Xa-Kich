@@ -70,6 +70,16 @@ static func build_aim_preview(gun_id: String, angle: float, power: float, facing
 	return _encode("aim_preview", {"gunId": gun_id, "angle": angle, "power": clampf(power, 0.0, 100.0), "facing": f})
 
 
+# ---- Kho súng ----
+
+## Đổi trang bị súng chung (chỉ trong thành). Máy chủ kiểm tra kho và số ô.
+static func build_set_loadout(gun_ids: Array) -> String:
+	var ids := []
+	for g in gun_ids:
+		ids.append(String(g))
+	return _encode("set_loadout", {"gunIds": ids})
+
+
 # ---- Thách đấu PvP ----
 
 static func build_challenge(target_entity_id: int) -> String:

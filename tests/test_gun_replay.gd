@@ -164,6 +164,53 @@ func test_replay_shower_after_parent_and_self_first() -> Array:
 	])
 
 
+func test_common_gun_helpers() -> Array:
+	var guns := {
+		"a": {"id": "a", "ten": "Laser", "tang": "hiem", "kind": "beam", "damage": 35, "pierceTiles": 2},
+		"b": {"id": "b", "ten": "Ba tia", "tang": "thuong", "kind": "spread", "count": 3, "damage": 14},
+		"c": {"id": "c", "ten": "Cung", "tang": "cung"},
+		"d": {"id": "d", "ten": "Dây", "tang": "hiem", "chain": {"maxTargets": 2}},
+	}
+	var sel := GunInfo.toggle_loadout([], "a", 2)
+	sel = GunInfo.toggle_loadout(sel, "b", 2)
+	var full := GunInfo.toggle_loadout(sel, "d", 2)
+	var rem := GunInfo.toggle_loadout(sel, "a", 2)
+	var zz := GunInfo.zigzag(Vector2(0, 0), Vector2(10, 0), 4, 1.0)
+	return _check([
+		[GunInfo.owned_common(["a", "c", "b", "x", "a"], guns) == ["a", "b"], "lọc súng chung, bỏ trùng"],
+		[full == ["a", "b"] and rem == ["b"], "toggle: đủ ô thì không thêm, bấm lại thì bỏ"],
+		[GunInfo.describe(guns["a"]).contains("xuyên 2"), "mô tả tia"],
+		[GunInfo.describe(guns["b"]).contains("3 viên"), "mô tả ba tia"],
+		[GunInfo.describe(guns["d"]).contains("2 mục tiêu"), "mô tả chuỗi"],
+		[GunInfo.tier_name(guns["a"]) == "Hiếm" and GunInfo.tier_color(guns["a"]) != GunInfo.tier_color(guns["b"]), "tầng + màu"],
+		[GunInfo.drops_text(["a"], guns) == "Nhận được: Laser" and GunInfo.drops_text([], guns) == "", "drops"],
+		[GunInfo.status_text({"type": "poison"}) == "Độc" and GunInfo.status_text({"type": "root"}) == "Trói", "Độc/Trói"],
+		[zz.size() == 5 and zz[0] == Vector2(0, 0) and zz[4] == Vector2(10, 0), "zigzag đầu cuối"],
+		[GunInfo.zone_label({"active": false, "turnsLeft": 3}) == "Cảnh báo (3)" and GunInfo.zone_label({"active": true, "turnsLeft": 2}).contains("(2)"), "nhãn vũng"],
+		[GunInfo.to_vec({"x": 1, "y": 2}) == Vector2(1, 2) and GunInfo.to_vec([3, 4]) == Vector2(3, 4), "to_vec"],
+	])
+
+
+func test_replay_beam_chain_zones() -> Array:
+	var r := {
+		"turn": 1,
+		"shots": [{"unitId": 1, "gunId": "laser", "points": [], "flightSeconds": 0.0, "impact": null, "beam": {"from": {"x": 1, "y": 5}, "to": {"x": 30, "y": 5}}}],
+		"explosions": [], "damage": [],
+		"chainHits": [{"fromUnitId": 2, "toUnitId": 3, "amount": 15}],
+		"zones": [{"id": 1, "x": 5, "y": 5, "radius": 2.5, "turnsLeft": 3, "active": false}],
+		"falls": [], "deaths": [], "units": [],
+	}
+	var p := ReplayPlan.build(r, {})
+	var kinds := []
+	for x in p["extra"]:
+		kinds.append(x["kind"])
+	return _check([
+		[p["flights"][0]["beam"] != null and is_equal_approx(p["flights"][0]["duration"], ReplayPlan.BEAM_TIME), "beam giữ nguyên, thời lượng ngắn"],
+		[kinds.has("chain"), "chainHits thành extra"],
+		[p["zones"].size() == 1, "giữ zones"],
+	])
+
+
 func _check(pairs: Array) -> Array:
 	var errors := []
 	for p in pairs:

@@ -35,6 +35,9 @@ var _modal: Control
 var _modal_lbl: Label
 var _toast: Label
 var _toast_age := 99.0
+var character: Variant = null   # nhân vật từ máy chủ (chỉ để hiển thị kho súng)
+var _gun_btn: Button
+var _inventory: GunInventory
 
 
 func _ready() -> void:
@@ -52,6 +55,16 @@ func _ready() -> void:
 	_hint.position = Vector2(16, 40)
 	layer.add_child(_hint)
 	_build_challenge_ui(layer)
+	_gun_btn = UiKit.button("Kho súng", 22, 56.0)
+	_gun_btn.position = Vector2(16, 76)
+	_gun_btn.custom_minimum_size = Vector2(160, 56)
+	_gun_btn.disabled = true
+	_gun_btn.pressed.connect(func(): _inventory.open_panel())
+	layer.add_child(_gun_btn)
+	_inventory = GunInventory.new()
+	layer.add_child(_inventory)
+	_inventory.set_character(character)
+	layer.move_child(_toast, -1)
 	if _has_state:
 		_update_hint()
 
@@ -215,7 +228,16 @@ func on_challenge_message(msg: Dictionary) -> void:
 
 
 func on_error(code: String, message: String) -> void:
-	_toast_show(UiText.server_error(code, message))
+	var text := UiText.server_error(code, message)
+	_toast_show(text)
+	if _inventory != null:
+		_inventory.show_error(text)
+
+
+func set_character(ch: Variant) -> void:
+	character = ch
+	if _inventory != null:
+		_inventory.set_character(ch)
 
 
 func _update_challenge_ui(delta: float) -> void:
@@ -318,6 +340,8 @@ func _player_at(world: Vector2) -> int:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _has_state:
 		return
+	if _inventory != null and _inventory.visible:
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var world := get_global_mouse_position()
 		var hit := _player_at(world)
@@ -333,6 +357,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	_tap_age += delta
 	_update_challenge_ui(delta)
+	if _gun_btn != null:
+		var in_city := _has_state and _map_id == "thanh"
+		_gun_btn.disabled = not in_city
+		if not in_city and _inventory.visible:
+			_inventory.visible = false
 	if _tracks.has(_you):
 		_camera.position = _tracks[_you].sample(_now()) * TILE
 	queue_redraw()

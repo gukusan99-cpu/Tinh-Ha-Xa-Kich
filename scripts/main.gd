@@ -132,6 +132,7 @@ func _show_character() -> void:
 
 func _show_world(state: Dictionary) -> void:
 	var s := WorldScreen.new()
+	s.character = character
 	if not state.is_empty():
 		s.apply_state(state)
 	_set_screen(s)
@@ -172,6 +173,8 @@ func _on_message(msg: Dictionary) -> void:
 		"character":
 			character = msg.get("character")
 			_refresh_pvp()
+			if _screen is WorldScreen:
+				_screen.set_character(character)
 			if _screen is CharacterScreen:
 				Net.send_json(Protocol.build_enter_world())
 		"world_state":

@@ -52,6 +52,9 @@ var _next_event := 0
 var _fall_started := false
 var _flashes := []
 var _floaters := []
+var _zones := []        # vũng hiệu ứng từ máy chủ: {id, x, y, radius, turnsLeft, active}
+var _chains := []       # tia điện đang hiển thị: {from, to, age}
+const CHAIN_LIFE := 0.6
 
 # UI
 var _info: Label
@@ -250,6 +253,9 @@ func _refresh_guns() -> void:
 		b.toggle_mode = true
 		b.button_pressed = gid == _gun_id
 		b.disabled = not GunInfo.availability(g, energy, cds)["ok"]
+		var tc := GunInfo.tier_color(g)
+		for cn in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
+			b.add_theme_color_override(cn, tc)
 		b.pressed.connect(func():
 			_gun_id = gid
 			_preview_dirty = true
@@ -307,6 +313,8 @@ func on_message(msg: Dictionary) -> void:
 			_preview_points = []
 			_last_preview_ms = -1.0
 			_apply_unit_states(msg.get("units", []))
+			if typeof(msg.get("zones")) == TYPE_ARRAY:
+				_zones = msg["zones"]
 			_refresh_guns()
 			_update_phase_ui()
 		"aim_preview":
@@ -403,6 +411,8 @@ func _tick_replay(delta: float) -> void:
 			su["pos"] = sp
 	if not _fall_started and _rt >= _plan["fall_time"]:
 		_fall_started = true
+		if typeof(_plan.get("zones")) == TYPE_ARRAY:
+			_zones = _plan["zones"]
 		for f in _plan["falls"]:
 			var id := int(f["unitId"])
 			if _units.has(id):
@@ -454,6 +464,13 @@ func _float_text(text: String, pos: Vector2, color: Color) -> void:
 ## Hiệu ứng ngoài vụ nổ: self, khiên hấp thụ, trạng thái, đẩy lùi, cháy.
 func _fire_extra(x: Dictionary) -> void:
 	var ev: Dictionary = x["ev"]
+	if String(x["kind"]) == "chain":
+		var to_id := int(ev.get("toUnitId", -1))
+		var from_id := int(ev.get("fromUnitId", -1))
+		if _units.has(to_id) and _units.has(from_id):
+			_chains.append({"from": from_id, "to": to_id, "age": 0.0})
+			_float_text("-%d" % int(ev.get("amount", 0)), _unit_label_pos(to_id), Color(0.6, 0.85, 1.0))
+		return
 	var uid := int(ev.get("unitId", -1))
 	if not _units.has(uid):
 		return
@@ -475,6 +492,9 @@ func _fire_extra(x: Dictionary) -> void:
 		"burn":
 			u["hp"] = int(ev.get("hpAfter", u["hp"]))
 			_float_text("-%d cháy" % int(ev.get("amount", 0)), _unit_label_pos(uid), GunInfo.status_color("burn"))
+		"poison":
+			u["hp"] = int(ev.get("hpAfter", u["hp"]))
+			_float_text("-%d độc" % int(ev.get("amount", 0)), _unit_label_pos(uid), GunInfo.status_color("poison"))
 
 
 func _finish_replay() -> void:
@@ -565,6 +585,9 @@ func _process(delta: float) -> void:
 	for f in _floaters:
 		f["age"] += delta
 	_floaters = _floaters.filter(func(f): return f["age"] < 1.4)
+	for c in _chains:
+		c["age"] += delta
+	_chains = _chains.filter(func(c): return c["age"] < CHAIN_LIFE)
 	_update_info()
 	if _mode == "idle" and not _pending_end.is_empty() and not _end_shown:
 		_show_end()
@@ -630,8 +653,10 @@ func _draw() -> void:
 				start = -1
 	_draw_move_marker()
 	var font := ThemeDB.fallback_font
+	_draw_zones(font)
 	for id in _units.keys():
 		_draw_unit(font, _units[id])
+	_draw_chains()
 	_draw_aim_line()
 	_draw_fx()
 	_draw_projectiles()
@@ -644,6 +669,35 @@ func _draw() -> void:
 		var col: Color = f["color"]
 		col.a = clampf(1.6 - f["age"], 0.0, 1.0)
 		draw_string(font, p + Vector2(-60, 0), f["text"], HORIZONTAL_ALIGNMENT_CENTER, 120, 22, col)
+
+
+func _draw_zones(font: Font) -> void:
+	for z in _zones:
+		if typeof(z) != TYPE_DICTIONARY:
+			continue
+		var c := _to_screen(Vector2(float(z.get("x", 0)), float(z.get("y", 0))))
+		var r := float(z.get("radius", 1.0)) * _ts
+		var active := bool(z.get("active", false))
+		if active:
+			draw_circle(c, r, Color(0.3, 0.8, 0.25, 0.35))
+			draw_arc(c, r, 0, TAU, 48, Color(0.5, 1.0, 0.4, 0.9), 2.0)
+		else:
+			draw_circle(c, r, Color(0.3, 0.8, 0.25, 0.12))
+			var n := 24
+			for i in n:
+				if i % 2 == 0:
+					draw_arc(c, r, TAU * i / n, TAU * (i + 1) / n, 4, Color(0.8, 1.0, 0.4, 0.9), 2.5)
+		draw_string(font, c + Vector2(-70, 5), GunInfo.zone_label(z), HORIZONTAL_ALIGNMENT_CENTER, 140, 16, Color(0.85, 1.0, 0.7))
+
+
+func _draw_chains() -> void:
+	for ch in _chains:
+		if not _units.has(ch["from"]) or not _units.has(ch["to"]):
+			continue
+		var a := _to_screen((_units[ch["from"]]["pos"] as Vector2) + Vector2(0, -_radius))
+		var b := _to_screen((_units[ch["to"]]["pos"] as Vector2) + Vector2(0, -_radius))
+		var k: float = ch["age"] / CHAIN_LIFE
+		draw_polyline(GunInfo.zigzag(a, b, 6, _ts * 0.35), Color(0.7, 0.9, 1.0, 1.0 - k), 3.0)
 
 
 func _draw_move_marker() -> void:
@@ -737,6 +791,15 @@ func _draw_projectiles() -> void:
 		if local < 0.0 or local > f["duration"]:
 			continue
 		var frac: float = local / f["duration"]
+		if f.get("beam") != null:
+			var bm: Dictionary = f["beam"]
+			var ba := _to_screen(GunInfo.to_vec(bm.get("from")))
+			var bb := _to_screen(GunInfo.to_vec(bm.get("to")))
+			var fade := 1.0 - frac
+			draw_line(ba, bb, Color(0.4, 0.9, 1.0, 0.5 * fade), maxf(_ts * 0.6, 8.0))
+			draw_line(ba, bb, Color(1, 1, 1, fade), maxf(_ts * 0.2, 3.0))
+			draw_circle(ba, maxf(_ts * 0.5, 6.0) * (1.0 + frac), Color(1, 1, 1, 0.6 * fade))
+			continue
 		var trail := ReplayPlan.points_upto(f["points"], frac)
 		var child: bool = f["isChild"]
 		if trail.size() >= 2:
@@ -788,6 +851,12 @@ func _show_end() -> void:
 		var lv := UiKit.label("Cấp %d (%d EXP)" % [int(ch.get("level", 1)), int(ch.get("exp", 0))], 24, Color(0.8, 0.9, 1.0))
 		lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		box.add_child(lv)
+	var drops_txt := GunInfo.drops_text(_pending_end.get("drops"), _guns)
+	if not _pvp and not drops_txt.is_empty():
+		var dl := UiKit.label(drops_txt, 26, Color(0.75, 0.6, 1.0))
+		dl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		box.add_child(dl)
 	var ok := UiKit.button("Tiếp tục")
 	ok.pressed.connect(func(): finished.emit())
 	box.add_child(ok)

@@ -15,6 +15,8 @@ const SELF_TIME := 0.8
 const KNOCK_TIME := 0.35
 const BURN_DELAY := 0.6
 const BURN_STEP := 0.15
+const BEAM_TIME := 0.3
+const CHAIN_STEP := 0.2
 
 
 ## guns: id -> dữ liệu súng (để biết kind). unit_pos: id -> Vector2 (tâm đơn vị, chỉ để gán số sát thương
@@ -26,7 +28,10 @@ static func build(result: Dictionary, guns: Dictionary = {}, unit_pos: Dictionar
 
 	var durs := []
 	for s in shots:
-		durs.append(maxf(float((s as Dictionary).get("flightSeconds", 0.0)), MIN_FLIGHT))
+		var dur := maxf(float((s as Dictionary).get("flightSeconds", 0.0)), MIN_FLIGHT)
+		if (s as Dictionary).get("beam") != null:
+			dur = BEAM_TIME
+		durs.append(dur)
 	var starts := []
 	starts.resize(shots.size())
 	for i in shots.size():
@@ -39,7 +44,7 @@ static func build(result: Dictionary, guns: Dictionary = {}, unit_pos: Dictionar
 			"unitId": int(shot["unitId"]), "points": shot.get("points", []), "duration": durs[i],
 			"start": starts[i], "crit": bool(shot.get("crit", false)),
 			"hasImpact": shot.get("impact") != null, "gunId": String(shot.get("gunId", "")),
-			"isChild": shot.get("parentIndex") != null,
+			"isChild": shot.get("parentIndex") != null, "beam": shot.get("beam"),
 		})
 	var max_end := base
 	for i in shots.size():
@@ -95,6 +100,10 @@ static func build(result: Dictionary, guns: Dictionary = {}, unit_pos: Dictionar
 		extra.append({"t": st, "kind": "shield", "ev": sa})
 	for se in result.get("statusEvents", []):
 		extra.append({"t": last_t + 0.05, "kind": "status", "ev": se})
+	var ci := 0
+	for ch in result.get("chainHits", []):
+		extra.append({"t": last_t + 0.05 + ci * CHAIN_STEP, "kind": "chain", "ev": ch})
+		ci += 1
 	var kbs: Array = result.get("knockbacks", [])
 	for kb in kbs:
 		extra.append({"t": last_t + 0.1, "kind": "knockback", "ev": kb})
@@ -106,6 +115,11 @@ static func build(result: Dictionary, guns: Dictionary = {}, unit_pos: Dictionar
 		extra.append({"t": t2, "kind": "burn", "ev": bt})
 		end_t = maxf(end_t, t2 + 0.5)
 		bi += 1
+	for pt in result.get("poisonTicks", []):
+		var t3 := fall_t + BURN_DELAY + bi * BURN_STEP
+		extra.append({"t": t3, "kind": "poison", "ev": pt})
+		end_t = maxf(end_t, t3 + 0.5)
+		bi += 1
 	_stable_sort(extra)
 
 	return {
@@ -115,6 +129,7 @@ static func build(result: Dictionary, guns: Dictionary = {}, unit_pos: Dictionar
 		"extra": extra,
 		"falls": result.get("falls", []),
 		"deaths": result.get("deaths", []),
+		"zones": result.get("zones"),
 		"units": result.get("units", []),
 		"fall_time": fall_t,
 		"duration": end_t + TAIL,
