@@ -673,8 +673,7 @@ export function chooseMonsterShot(
   guns: Record<string, GunStats>,
   cfg: BattleConfig,
 ): ShotCommand {
-  void guns;
-  return planMonsterShot(state, unitId, cfg).cmd;
+  return planMonsterShot(state, unitId, cfg, guns).cmd;
 }
 
 /** RNG di chuyển của quái, suy ra từ seed của lượt (độc lập với RNG bắn). */
@@ -694,7 +693,6 @@ export function chooseMonsterMove(
   cfg: BattleConfig,
   rng: () => number,
 ): MoveCommand | null {
-  void guns;
   const me = state.units.find((u) => u.id === unitId);
   if (!me || !me.alive || me.kind !== "monster") return null;
   const range = me.moveRangeTiles ?? 0;
@@ -703,18 +701,29 @@ export function chooseMonsterMove(
   if (enemies.length === 0) return null;
   const farFrom = (col: number): number => Math.min(...enemies.map((e) => Math.abs(e.col - col)));
 
+  // Đồng đội id nhỏ hơn đi trước (dự đoán bằng rng trung tính): tránh chồng lên cột của họ, vì đứng chồng là nổ vào nhau.
+  let base = state;
+  for (const a of state.units) {
+    if (a.id >= unitId || a.team !== me.team || !a.alive || a.kind !== "monster") continue;
+    const ac = chooseMonsterMove(state, a.id, guns, cfg, () => 0);
+    if (ac) base = applyMoves(base, [ac], cfg).state;
+  }
+
   const seen = new Set<number>();
-  const cands: { col: number; dist: number; far: number }[] = [];
+  const cands: { col: number; harm: number; dist: number; far: number }[] = [];
   for (let c = Math.max(0, me.col - range); c <= Math.min(state.width - 1, me.col + range); c++) {
-    const r = applyMoves(state, [{ unitId, col: c }], cfg);
+    const r = applyMoves(base, [{ unitId, col: c }], cfg);
     const moved = r.state.units.find((u) => u.id === unitId)!;
     if (seen.has(moved.col)) continue;
     seen.add(moved.col);
-    cands.push({ col: moved.col, dist: planMonsterShot(r.state, unitId, cfg).dist, far: farFrom(moved.col) });
+    const plan = planMonsterShot(r.state, unitId, cfg, guns);
+    cands.push({ col: moved.col, harm: plan.harm, dist: plan.dist, far: farFrom(moved.col) });
   }
   const EPS = 1e-9;
-  const bestDist = Math.min(...cands.map((c) => c.dist));
-  const near = cands.filter((c) => c.dist <= bestDist + EPS);
+  const bestHarm = Math.min(...cands.map((c) => c.harm));
+  const safe = cands.filter((c) => c.harm === bestHarm);
+  const bestDist = Math.min(...safe.map((c) => c.dist));
+  const near = safe.filter((c) => c.dist <= bestDist + EPS);
   const bestFar = Math.max(...near.map((c) => c.far));
   const pool = near.filter((c) => c.far === bestFar).sort((a, b) => a.col - b.col);
   const pick = pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))]!;
@@ -725,11 +734,13 @@ function planMonsterShot(
   state: BattleState,
   unitId: number,
   cfg: BattleConfig,
-): { cmd: ShotCommand; dist: number } {
+  guns: Record<string, GunStats>,
+): { cmd: ShotCommand; dist: number; harm: number } {
   const me = state.units.find((u) => u.id === unitId);
   const gunId = me?.gunId ?? "";
+  const gun = guns[gunId];
   const fallback: ShotCommand = { unitId, angle: 45, power: 50, facing: me?.facing ?? -1, gunId, aimElapsedSeconds: 0 };
-  if (!me) return { cmd: fallback, dist: Infinity };
+  if (!me) return { cmd: fallback, dist: Infinity, harm: Infinity };
   let target: Unit | null = null;
   let best = Infinity;
   for (const u of state.units) {
@@ -740,43 +751,97 @@ function planMonsterShot(
       target = u;
     }
   }
-  if (!target) return { cmd: fallback, dist: Infinity };
+  if (!target) return { cmd: fallback, dist: Infinity, harm: Infinity };
   const tx = target.col + 0.5;
   const ty = target.y - cfg.unitRadiusTiles;
 
-  let bestCmd = fallback;
-  let bestDist = Infinity;
   const x0 = me.col + 0.5;
   const y0 = me.y - cfg.unitRadiusTiles;
   const step = cfg.aiAngleStepDegrees;
-  search: for (const facing of [-1, 1] as const) {
+  const d = me.aiErrorTiles ?? cfg.deviationMaxTiles;
+  const g = cfg.gravityTilesPerSec2;
+
+  /** Điểm (hại phe mình, khoảng cách tới mục tiêu) của một phát, với độ lệch `offset` như resolveShots. */
+  const evalAt = (facing: -1 | 1, angle: number, power: number, offset: number): { harm: number; dist: number } | null => {
+    const v = (power / 100) * cfg.maxProjectileSpeedTilesPerSec;
+    const T = Math.max(0.5, (2 * v * Math.sin(Math.max(angle, 10) * DEG)) / g);
+    const f = simulate(
+      state,
+      {
+        x0,
+        y0,
+        vx: facing * v * Math.cos(angle * DEG) + offset / T,
+        vy: -v * Math.sin(angle * DEG),
+        shooterId: me.id,
+      },
+      cfg,
+      false,
+    );
+    if (!f.impact) return null;
+    return {
+      harm: gun ? friendlyDamage(state, me, f, gun, cfg) : 0,
+      dist: f.hitUnitId === target.id ? 0 : Math.hypot(f.impact.x - tx, f.impact.y - ty),
+    };
+  };
+
+  // vòng 1: mọi phát không lệch
+  const cands: { facing: -1 | 1; angle: number; power: number; harm: number; dist: number }[] = [];
+  for (const facing of [-1, 1] as const) {
     for (let angle = step; angle <= cfg.aimAngleMaxDegrees; angle += step) {
       if (angle < cfg.aimAngleMinDegrees) continue;
       for (let power = 10; power <= 100; power += 5) {
-        const v = (power / 100) * cfg.maxProjectileSpeedTilesPerSec;
-        const f = simulate(
-          state,
-          {
-            x0,
-            y0,
-            vx: facing * v * Math.cos(angle * DEG),
-            vy: -v * Math.sin(angle * DEG),
-            shooterId: me.id,
-          },
-          cfg,
-          false,
-        );
-        if (!f.impact) continue;
-        const dist = f.hitUnitId === target.id ? 0 : Math.hypot(f.impact.x - tx, f.impact.y - ty);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestCmd = { unitId, angle, power, facing, gunId, aimElapsedSeconds: 0 };
-          if (dist === 0) break search; // trúng thẳng: không thể tốt hơn (kết quả giữ nguyên)
-        }
+        const e = evalAt(facing, angle, power, 0);
+        if (e) cands.push({ facing, angle, power, ...e });
       }
     }
   }
-  return { cmd: bestCmd, dist: bestDist };
+  const byScore = (a: { harm: number; dist: number }, b: { harm: number; dist: number }): number =>
+    a.harm - b.harm || a.dist - b.dist;
+  cands.sort(byScore); // sort ổn định: hòa thì giữ thứ tự duyệt
+
+  // vòng 2: các phát tốt nhất được chấm lại trung bình trên các độ lệch {-d, -d/2, 0, +d/2, +d}
+  let finalists = cands;
+  if (d > 0) {
+    const offsets = [-d, -d / 2, 0, d / 2, d];
+    finalists = cands.slice(0, REFINE_TOP).map((c) => {
+      let harm = 0;
+      let dist = 0;
+      for (const o of offsets) {
+        const e = o === 0 ? c : evalAt(c.facing, c.angle, c.power, o);
+        harm += e ? e.harm : 0;
+        dist += e ? e.dist : OFF_MAP_DIST;
+      }
+      return { ...c, harm: harm / offsets.length, dist: dist / offsets.length };
+    });
+    finalists.sort(byScore);
+  }
+  const b = finalists[0];
+  if (!b) return { cmd: fallback, dist: Infinity, harm: Infinity };
+  return {
+    cmd: { unitId, angle: b.angle, power: b.power, facing: b.facing, gunId, aimElapsedSeconds: 0 },
+    dist: b.dist,
+    harm: b.harm,
+  };
+}
+
+/** Số phát tốt nhất (không lệch) được chấm lại dưới độ lệch. */
+const REFINE_TOP = 40;
+/** Khoảng cách phạt khi một mẫu lệch bay ra ngoài bản đồ. */
+const OFF_MAP_DIST = 100;
+
+/**
+ * Sát thương (không lệch, không chí mạng, không khiên/giảm sát thương) mà phát bắn này gây cho người bắn
+ * và đồng đội còn sống, theo cùng công thức rơi sát thương như resolveShots.
+ */
+function friendlyDamage(state: BattleState, me: Unit, f: FlightOut, gun: GunStats, cfg: BattleConfig): number {
+  if (!f.impact || gun.kind === "self" || gun.kind === "shower") return 0;
+  let total = 0;
+  for (const u of state.units) {
+    if (!u.alive || u.team !== me.team) continue;
+    const dist = f.hitUnitId === u.id ? 0 : Math.hypot(f.impact.x - (u.col + 0.5), f.impact.y - (u.y - cfg.unitRadiusTiles));
+    total += Math.round(gun.damage * Math.max(0, 1 - dist / (gun.blastRadiusTiles + cfg.unitRadiusTiles)));
+  }
+  return total;
 }
 
 /**

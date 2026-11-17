@@ -127,7 +127,7 @@ Mọi hằng số lấy từ `data/can-bang-v0.json`. Hợp đồng kiểu nằm
 - **Nổ:** xóa ô đất có tâm cách điểm nổ ≤ `blastRadiusTiles`. Sát thương mỗi đơn vị: dist = khoảng cách điểm nổ tới tâm thân; sát thương = round(damage × crit × max(0, 1 − dist/(blastRadius + unitRadius))). Trúng trực tiếp tính dist = 0.
 - **Rơi:** sau mọi vụ nổ, đơn vị rơi xuống ô đất đầu tiên bên dưới; không còn đất thì chết.
 - **Kết thúc:** hết người chơi sống → `lose`; hết quái → `win`; hết `maxTurns` → `draw`. Người chơi bỏ lỡ `disconnectMissedTurnsToKick` lượt liên tiếp thì bị loại (hp = 0).
-- **Quái:** thử mọi góc từ `aiAngleStep` trong khoảng góc cho phép, power từ 10 tới 100 bước 5, hai hướng; mô phỏng không lệch; chọn phát có điểm chạm gần người chơi sống gần nhất. Quái không di chuyển ở Giai đoạn 1.
+- **Quái:** thử mọi góc từ `aiAngleStep` trong khoảng góc cho phép, power từ 10 tới 100 bước 5, hai hướng; mô phỏng không lệch; chọn phát có điểm chạm gần người chơi sống gần nhất, nhưng bỏ qua phát làm mất máu chính nó hoặc đồng đội (cùng công thức rơi sát thương, không lệch); nếu mọi phát đều gây hại thì chọn phát hại ít nhất. Quái không di chuyển ở Giai đoạn 1.
 - **Lấy mẫu quỹ đạo:** gửi điểm mỗi `simHz/trajectorySampleHz` bước, làm tròn 2 chữ số, luôn kèm điểm cuối.
 
 ## Việc chưa chốt

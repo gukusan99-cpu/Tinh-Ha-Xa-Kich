@@ -17,6 +17,7 @@ Mỗi điểm sinh quái chỉ sinh một loại. Chạm vào quái nào thì v�
 
 ## Quái di chuyển (`moveRangeTiles` trong `data/quai.json`)
 - Trong pha di chuyển, mỗi quái có `moveRangeTiles > 0` chọn một cột đích trong tầm, bằng RNG có seed của lượt. Quái ưu tiên cột mà từ đó `chooseMonsterShot` chạm gần người chơi nhất; hai cột tốt bằng nhau thì chọn cột xa người chơi hơn. Lệnh di chuyển đi qua `applyMoves` như người chơi, nên choáng và chậm có tác dụng.
+- Khi so các cột đích, quái ưu tiên cột mà phát bắn tốt nhất từ đó gây ít sát thương nhất cho chính nó và đồng đội (tốt nhất là không có), tính trung bình trên các độ lệch {-d, -d/2, 0, +d/2, +d} với d = `aiErrorTiles`, rồi mới xét điểm chạm gần người chơi; quái cũng coi đồng đội id nhỏ hơn đã đi trước, nên không đứng chồng lên nhau hay tự đi vào chỗ phải bắn vào vách sát mình.
 - Quái quyết định trước khi biết người chơi đi đâu, tức là đồng thời như người chơi.
 
 ## Cổng khóa cấp

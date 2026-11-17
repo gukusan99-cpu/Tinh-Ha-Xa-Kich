@@ -17,7 +17,7 @@ import {
   validateShot,
   winnerTeam,
 } from "../battle/engine.js";
-import type { BattleConfig, BattleState, GunStats, MoveCommand, ShotCommand, SignId, Unit } from "../battle/types.js";
+import type { BattleConfig, BattleState, GunStats, MoveCommand, ShotCommand, SignId, TurnResult, Unit } from "../battle/types.js";
 import { loadGameData, type GameData } from "../data.js";
 
 export type Policy = "gioi" | "ngau_nhien" | "trung_binh";
@@ -53,6 +53,8 @@ export interface SimOptions {
   monsterId?: string;
   overrides?: Overrides;
   data?: GameData;
+  /** Móc đo đạc: gọi sau mỗi lượt bắn với trạng thái trước lượt và kết quả lượt. */
+  onTurn?: (before: BattleState, result: TurnResult) => void;
 }
 
 export interface SimResult {
@@ -353,7 +355,9 @@ export function simulateMatch(opts: SimOptions): SimResult {
     for (const u of state.units) {
       if (u.team === 1 && u.alive) cmds.push(chooseMonsterShot(state, u.id, guns, cfg));
     }
-    state = resolveShots(state, cmds, guns, cfg, seed).state;
+    const resolved = resolveShots(state, cmds, guns, cfg, seed);
+    opts.onTurn?.(state, resolved.result);
+    state = resolved.state;
     res = outcome(state, maxTurns);
   }
   const me = state.units.find((u) => u.id === PLAYER_ID)!;

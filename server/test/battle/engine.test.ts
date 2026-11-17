@@ -409,6 +409,36 @@ describe("chooseMonsterShot", () => {
     const s = deepFreeze(mkState([unit(1, 10, 0), unit(2, 30, 1)]));
     expect(() => chooseMonsterShot(s, 2, GUNS, CFG)).not.toThrow();
   });
+  it("does not shoot into a wall right next to itself", () => {
+    const map = flatMap();
+    for (let r = 0; r < 20; r++) map.rows[r] = map.rows[r]!.slice(0, 26) + "####" + map.rows[r]!.slice(30);
+    const s = createBattleState(map, [unit(1, 10, 0), unit(2, 30, 1, { aiErrorTiles: 0 })]);
+    const cmd = chooseMonsterShot(s, 2, GUNS, CFG);
+    const { state } = resolveShots(s, [cmd], GUNS, CFG, 1);
+    expect(state.units.find((u) => u.id === 2)!.hp).toBe(100);
+  });
+  it("in a narrow pit prefers a shot that stays safe under its own deviation", () => {
+    const map = flatMap();
+    // hố hẹp rộng 3 ô (cột 29..31) sâu 2 ô; người chơi ở cột 25, quái ở đáy hố cột 30
+    for (let r = 20; r < 22; r++) map.rows[r] = map.rows[r]!.slice(0, 29) + "..." + map.rows[r]!.slice(32);
+    const mk = (err: number) => createBattleState(map, [unit(1, 25, 0), unit(2, 30, 1, { aiErrorTiles: err })]);
+    const lossOver = (cmdFrom: BattleState, run: BattleState): number => {
+      const cmd = chooseMonsterShot(cmdFrom, 2, GUNS, CFG);
+      let total = 0;
+      for (let seed = 1; seed <= 40; seed++) total += 100 - resolveShots(run, [cmd], GUNS, CFG, seed).state.units[1]!.hp;
+      return total / 40;
+    };
+    const naive = lossOver(mk(0), mk(4)); // chọn như không có độ lệch
+    const aware = lossOver(mk(4), mk(4));
+    expect(aware).toBeLessThan(naive);
+  });
+  it("keeps allies out of the blast", () => {
+    const s = mkState([unit(1, 10, 0), unit(2, 30, 1, { aiErrorTiles: 0 }), unit(3, 11, 1, { aiErrorTiles: 0 })]);
+    const cmd = chooseMonsterShot(s, 2, GUNS, CFG);
+    const { state } = resolveShots(s, [cmd], GUNS, CFG, 1);
+    expect(state.units.find((u) => u.id === 3)!.hp).toBe(100);
+    expect(state.units.find((u) => u.id === 2)!.hp).toBe(100);
+  });
   it("finishes under 200 ms on a 60x30 map", () => {
     const map = flatMap(60, 30, 22);
     for (let c = 0; c < 60; c++) {
