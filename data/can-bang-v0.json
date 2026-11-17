@@ -66,6 +66,10 @@
   "contactRadiusTiles": 0.8,
   "monsterRespawnSeconds": 10,
   "worldTickHz": 10,
+  "challengeTimeoutSeconds": 20,
+  "challengeRetrySeconds": 15,
+  "pvpMaxTurns": 15,
+  "pvpBattleMapId": "dau_truong_1",
   "chuaCoSo": [
     "burnDamagePerTurn",
     "poisonDamagePerTurn",
