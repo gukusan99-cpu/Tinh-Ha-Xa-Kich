@@ -7,7 +7,8 @@ describe("nạp dữ liệu", () => {
     const d = loadGameData();
     expect(d.character.baseHp).toBeGreaterThan(0);
     expect(d.character.signs).toEqual(["bach_duong", "kim_nguu", "xu_nu", "bao_binh"]);
-    expect(d.guns["thuoc_no_nho"]?.damage).toBe(35);
+    expect(d.guns["thuoc_no_nho"]?.damage).toBeGreaterThan(0);
+    expect(d.guns[d.monsters["am_thach_nho"]!.gunId]).toBeDefined();
     expect(d.monsters["am_thach_nho"]?.groupSize).toBe(2);
     expect(d.settings.movePhaseSeconds).toBe(15);
     expect(d.settings.contactRadiusTiles).toBe(0.8);

@@ -155,12 +155,16 @@ describe("Match: hạn chót và kick", () => {
   it("bắn mỗi lượt thì không bị kick", async () => {
     const h = harness((d) => {
       d.guns["thuoc_no_nho"]!.damage = 0;
+      d.guns[d.monsters["am_thach_nho"]!.gunId]!.damage = 0; // quái không giết người chơi
       d.settings.maxTurnsPerMatch = 5;
     });
+    // súng luôn đủ nội lực: chọn trong bộ súng của người chơi, energyCost 0
+    const guns = [...h.data.character.signDefs["xu_nu"]!.gunIds, ...h.data.character.commonGunIds];
+    const freeGun = guns.find((g) => h.data.guns[g]!.energyCost === 0 && h.data.guns[g]!.kind !== "self")!;
     h.match.start();
     for (let t = 0; t < 5; t++) {
       expect(h.match.handleMove(6)).toBe("ok");
-      expect(h.match.handleShot(45, 50, 1, "thuoc_no_nho")).toBe("ok");
+      expect(h.match.handleShot(45, 50, 1, freeGun)).toBe("ok");
       for (let i = 0; i < 40; i++) {
         h.clock.advance(1000);
         await flush();
@@ -270,18 +274,20 @@ describe("Match: Giai đoạn 2 (súng, nội lực, nội tại)", () => {
     const h = harness(nearMonsters, "kim_nguu");
     h.match.start();
     h.match.handleMove(6);
-    expect(h.match.handleShot(45, 28, 1, "sung_nang")).toBe("ok"); // cost 2, cooldown 1
+    const gun = h.data.guns["sung_nang"]!;
+    expect(gun.cooldownTurns).toBeGreaterThan(0);
+    expect(h.match.handleShot(45, 28, 1, "sung_nang")).toBe("ok");
     const tr = h.of("turn_result")[0];
     const regen = h.data.battle.energyRegenPerTurn;
     expect(tr.units.find((u: any) => u.id === 1)).toMatchObject({
-      energy: h.data.character.energyStart - 2 + regen,
-      cooldowns: { sung_nang: 1 },
+      energy: Math.min(h.data.character.energyMax, h.data.character.energyStart - gun.energyCost + regen),
+      cooldowns: { sung_nang: gun.cooldownTurns },
     });
     expect(tr.shots[0]).toMatchObject({ gunId: "sung_nang", parentIndex: null });
     for (const k of ["selfEffects", "shieldAbsorbed", "statusEvents", "knockbacks", "burnTicks"]) expect(Array.isArray(tr[k])).toBe(true);
     await toMovePhase(h, 2);
     const ph = h.of("phase").find((p) => p.turn === 2 && p.phase === "move");
-    expect(ph.units.find((u: any) => u.id === 1)).toMatchObject({ cooldowns: { sung_nang: 1 } });
+    expect(ph.units.find((u: any) => u.id === 1)).toMatchObject({ cooldowns: { sung_nang: gun.cooldownTurns } });
     h.match.handleMove(6);
     expect(h.match.handleShot(45, 28, 1, "sung_nang")).toBe("not_allowed"); // còn hồi chiêu
     expect(h.match.handleShot(45, 28, 1, "thuoc_no_nho")).toBe("ok");
@@ -293,15 +299,20 @@ describe("Match: Giai đoạn 2 (súng, nội lực, nội tại)", () => {
       h.match.start();
       h.match.handleMove(6);
       h.clock.advance(waitMs);
-      h.match.handleShot(45, 28, 1, "phao_dan_no"); // 40 sát thương, đúng cung
+      h.match.handleShot(45, 28, 1, "phao_dan_no"); // đúng cung
       await flush();
       const tr = h.of("turn_result")[0];
       return Math.max(...tr.damage.filter((d: any) => d.sourceUnitId === 1).map((d: any) => d.amount));
     };
-    const early = await dmg(5_000);
-    const late = await dmg(12_000);
-    expect(early).toBe(Math.round(40 * 1.25));
-    expect(late).toBe(40);
+    const d0 = testData();
+    const base = d0.guns["phao_dan_no"]!.damage;
+    const passive = d0.character.signDefs["bach_duong"]!.passive as any;
+    expect(passive.type).toBe("earlyShot");
+    const early = await dmg((passive.earlyShotSeconds - 5) * 1000);
+    const late = await dmg((passive.earlyShotSeconds + 2) * 1000);
+    // bắn sớm bằng súng đúng cung: cộng earlyShotDamageBonus + lineBonus; bắn muộn: không cộng
+    expect(early).toBe(Math.round(base * (1 + passive.earlyShotDamageBonus + passive.lineBonus)));
+    expect(late).toBe(base);
   });
 
   it("aim_preview: chỉ khi có Ngắm chuẩn, giới hạn mỗi giây, bỏ qua lặng lẽ phần vượt", async () => {
