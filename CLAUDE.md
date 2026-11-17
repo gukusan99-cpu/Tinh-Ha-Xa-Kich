@@ -36,9 +36,11 @@ Máy chủ (chạy trong `server/`):
 - Cài: `npm install`
 - Chạy khi phát triển: `npm run dev` (cổng 8080, đổi bằng `$env:PORT`)
 - Test: `npm test`, kiểm kiểu: `npm run typecheck`, build: `npm run build`, chạy bản build: `npm start`
+- Mô phỏng cân bằng: PvE theo cung `npx tsx scripts/simulate.ts --n 1000 --sign all` (~2 phút); PvP theo cặp cung `npx tsx scripts/simulate.ts --pvp` (~30 giây)
 
 Client Godot (chạy ở thư mục gốc):
 - Mở editor: `& $godot --path . --editor`
 - Test đơn vị: `& $godot --headless --path . --script res://tests/run_tests.gd`
 - Test nối máy chủ (cần máy chủ đang chạy): `& $godot --headless --path . --script res://tests/e2e_probe.gd`
 - Bot chơi hết luồng (cần máy chủ đang chạy, khoảng 1–2 phút): `& $godot --headless --path . --script res://tests/e2e_full.gd`. Bỏ `--headless` và đặt `$env:E2E_SHOTS=<thư mục>` để chụp màn hình.
+- Bot PvP: chạy hai tiến trình `tests/e2e_pvp.gd`, một với `$env:E2E_ROLE='target'`, một với `'challenger'`; đặt `E2E_USER`, `E2E_NAME`, `E2E_TARGET_NAME` (tên người nhận).
