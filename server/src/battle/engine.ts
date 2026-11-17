@@ -726,6 +726,21 @@ export function chooseMonsterShot(
   return bestCmd;
 }
 
+/**
+ * Đội thắng: 0 hoặc 1 khi đội kia hết người sống; "draw" khi cả hai hết người cùng lúc
+ * hoặc khi state.turn > maxTurns; null khi chưa kết thúc.
+ */
+export function winnerTeam(state: BattleState, maxTurns: number): 0 | 1 | "draw" | null {
+  const a = state.units.some((u) => u.team === 0 && u.alive);
+  const b = state.units.some((u) => u.team === 1 && u.alive);
+  if (!a && !b) return "draw";
+  if (!b) return 0;
+  if (!a) return 1;
+  if (state.turn > maxTurns) return "draw";
+  return null;
+}
+
+/** Góc nhìn đội 0 (PvE): "lose" khi không còn người chơi sống, kể cả khi quái cũng chết cùng lượt. */
 export function outcome(state: BattleState, maxTurns: number): MatchOutcome {
   const players = state.units.some((u) => u.team === 0 && u.alive);
   const monsters = state.units.some((u) => u.team === 1 && u.alive);

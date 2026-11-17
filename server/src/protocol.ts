@@ -1,4 +1,4 @@
-/** Giao thức Giai đoạn 0 + 1 (xem docs/06-kien-truc.md). */
+/** Giao thức Giai đoạn 0 + 1 + 2 (xem docs/06-kien-truc.md, docs/08-thach-dau.md). */
 import type { Status, TurnResult } from "./battle/types.js";
 
 export const PROTOCOL_VERSION = 1;
@@ -11,6 +11,7 @@ const MAX_RAW_STRING = 256;
 const MAX_ABS_ANGLE = 360;
 const MAX_ABS_COORD = 1e6;
 const MAX_GUN_ID_LENGTH = 64;
+const MAX_ID_LENGTH = 64;
 
 export type ErrorCode =
   | "bad_json"
@@ -99,6 +100,22 @@ export interface AimPreviewMessage {
   power: number;
   facing: -1 | 1;
 }
+export interface ChallengeMessage {
+  v: 1;
+  type: "challenge";
+  targetEntityId: number;
+}
+export interface ChallengeReplyMessage {
+  v: 1;
+  type: "challenge_reply";
+  challengeId: string;
+  accept: boolean;
+}
+export interface ChallengeCancelMessage {
+  v: 1;
+  type: "challenge_cancel";
+  challengeId: string;
+}
 export type ClientMessage =
   | HelloMessage
   | PingMessage
@@ -109,7 +126,10 @@ export type ClientMessage =
   | MoveToMessage
   | BattleMoveMessage
   | BattleShotMessage
-  | AimPreviewMessage;
+  | AimPreviewMessage
+  | ChallengeMessage
+  | ChallengeReplyMessage
+  | ChallengeCancelMessage;
 
 // ---------- S→C ----------
 
@@ -119,6 +139,8 @@ export interface Character {
   level: number;
   exp: number;
   gunId: string;
+  /** Thành tích thách đấu (docs/08). */
+  pvp: { wins: number; losses: number; draws: number };
 }
 export interface Entity {
   id: number;
@@ -127,6 +149,9 @@ export interface Entity {
   x: number;
   y: number;
   monsterId?: string;
+  /** Chỉ người chơi: để hiển thị trước khi mời thách đấu. */
+  sign?: string;
+  level?: number;
 }
 export interface UnitInfo {
   id: number;
@@ -209,6 +234,7 @@ export interface MatchStartMessage {
   v: 1;
   type: "match_start";
   matchId: string;
+  mode: "pve" | "pvp";
   map: { width: number; height: number; rows: string[] };
   units: UnitInfo[];
   you: number;
@@ -243,6 +269,29 @@ export interface MatchEndMessage {
   rewards: { exp: number };
   character: Character;
 }
+export interface ChallengeSentMessage {
+  v: 1;
+  type: "challenge_sent";
+  challengeId: string;
+  targetName: string;
+  expiresAt: number;
+}
+export interface ChallengeReceivedMessage {
+  v: 1;
+  type: "challenge_received";
+  challengeId: string;
+  fromName: string;
+  fromSign: string;
+  fromLevel: number;
+  expiresAt: number;
+}
+export type ChallengeCloseReason = "accepted" | "declined" | "expired" | "cancelled" | "unavailable";
+export interface ChallengeClosedMessage {
+  v: 1;
+  type: "challenge_closed";
+  challengeId: string;
+  reason: ChallengeCloseReason;
+}
 export type ServerMessage =
   | WelcomeMessage
   | PongMessage
@@ -257,7 +306,10 @@ export type ServerMessage =
   | MovesResultMessage
   | AimPreviewResultMessage
   | TurnResultMessage
-  | MatchEndMessage;
+  | MatchEndMessage
+  | ChallengeSentMessage
+  | ChallengeReceivedMessage
+  | ChallengeClosedMessage;
 
 // ---------- parse ----------
 
@@ -266,6 +318,7 @@ export type ParseResult = { ok: true; message: ClientMessage } | { ok: false; co
 const fail = (code: ErrorCode): ParseResult => ({ ok: false, code });
 const bad = (): ParseResult => fail("bad_message");
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID_LENGTH;
 const isRawString = (v: unknown): v is string => typeof v === "string" && v.length <= MAX_RAW_STRING;
 
 /** Kiểm tra từng trường bằng tay; không tin bất cứ gì từ client. */
@@ -330,6 +383,21 @@ export function parseClientMessage(raw: string | Buffer): ParseResult {
       if (facing !== 1 && facing !== -1) return bad();
       if (typeof gunId !== "string" || gunId === "" || gunId.length > MAX_GUN_ID_LENGTH) return bad();
       return { ok: true, message: { v: 1, type: obj.type, gunId, angle, power, facing } };
+    }
+    case "challenge": {
+      const id = obj.targetEntityId;
+      if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 0) return bad();
+      return { ok: true, message: { v: 1, type: "challenge", targetEntityId: id } };
+    }
+    case "challenge_reply": {
+      const { challengeId, accept } = obj;
+      if (!isId(challengeId) || typeof accept !== "boolean") return bad();
+      return { ok: true, message: { v: 1, type: "challenge_reply", challengeId, accept } };
+    }
+    case "challenge_cancel": {
+      const challengeId = obj.challengeId;
+      if (!isId(challengeId)) return bad();
+      return { ok: true, message: { v: 1, type: "challenge_cancel", challengeId } };
     }
     default:
       return fail("unknown_type");

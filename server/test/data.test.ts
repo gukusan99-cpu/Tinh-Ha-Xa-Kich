@@ -19,6 +19,33 @@ describe("nạp dữ liệu", () => {
     expect(d.battle.moveRangeTiles).toBe(5);
   });
 
+  it("nạp cấu hình thách đấu và bản đồ đấu trường", () => {
+    const d = loadGameData();
+    expect(d.settings).toMatchObject({
+      challengeTimeoutSeconds: 20,
+      challengeRetrySeconds: 15,
+      pvpMaxTurns: 15,
+      pvpBattleMapId: "dau_truong_1",
+    });
+    const m = d.battleMaps["dau_truong_1"]!;
+    expect(m.team0SpawnCols.length).toBeGreaterThan(0);
+    expect(m.team1SpawnCols.length).toBeGreaterThan(0);
+    expect(m.team0SpawnCols[0]!).toBeLessThan(m.team1SpawnCols[0]!);
+    // bản đồ PvE không có khóa team*: lấy từ playerSpawnCols / monsterSpawnCols
+    const p = d.battleMaps["dong_am_thach_1"]!;
+    expect(p.team0SpawnCols).toEqual(p.playerSpawnCols);
+    expect(p.team1SpawnCols).toEqual(p.monsterSpawnCols);
+  });
+
+  it("từ chối pvpBattleMapId không có hoặc thiếu cột xuất phát", () => {
+    const d = testData();
+    d.settings.pvpBattleMapId = "zzz";
+    expect(() => validateGameData(d)).toThrow(/zzz/);
+    const e = testData();
+    e.battleMaps["dau_truong_1"]!.team1SpawnCols = [];
+    expect(() => validateGameData(e)).toThrow(/dau_truong_1/);
+  });
+
   it("từ chối bản đồ sai kích thước", () => {
     const d = testData();
     d.worldMaps["thanh"]!.rows[0] = "###";

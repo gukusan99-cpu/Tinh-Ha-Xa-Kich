@@ -203,7 +203,10 @@ export type MatchOutcome = "win" | "lose" | "draw" | null; // null: chưa kết 
  *   – lệnh không hợp lệ bị bỏ qua (như không bắn).
  * previewShot(state, cmd, guns, cfg, fraction): [number, number][]   – Súng kính, không lệch
  * chooseMonsterShot(state, unitId, guns, cfg): ShotCommand
- * outcome(state, maxTurns): MatchOutcome
+ * winnerTeam(state, maxTurns): 0 | 1 | "draw" | null
+ *   – đội còn người sống khi đội kia hết; "draw" nếu cả hai hết cùng lúc hoặc state.turn > maxTurns;
+ *     null nếu chưa kết thúc. Dùng cho PvE và PvP (docs/08).
+ * outcome(state, maxTurns): MatchOutcome   – góc nhìn đội 0, giữ để tương thích
  *   – "lose" nếu không còn người chơi sống (ưu tiên trước "win"), "win" nếu không còn quái sống,
  *     "draw" nếu state.turn > maxTurns, ngược lại null.
  * mulberry32(seed: number): () => number

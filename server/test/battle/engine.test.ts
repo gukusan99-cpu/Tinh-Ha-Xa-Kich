@@ -6,6 +6,7 @@ import {
   mulberry32,
   outcome,
   resolveShots,
+  winnerTeam,
 } from "../../src/battle/engine.js";
 import { loadBattleConfig, loadGuns } from "../../src/battle/config.js";
 import type { BattleState, ShotCommand } from "../../src/battle/types.js";
@@ -345,6 +346,38 @@ describe("outcome", () => {
     expect(outcome(s, 20)).toBe("draw");
     s.turn = 20;
     expect(outcome(s, 20)).toBeNull();
+  });
+});
+
+describe("winnerTeam", () => {
+  const base = (): BattleState => mkState([unit(1, 5, 0), unit(2, 20, 1)]);
+  it("null while both teams alive", () => {
+    expect(winnerTeam(base(), 20)).toBeNull();
+  });
+  it("team 0 / team 1 wins when the other team is gone", () => {
+    const s = base();
+    s.units[1]!.alive = false;
+    expect(winnerTeam(s, 20)).toBe(0);
+    const t = base();
+    t.units[0]!.alive = false;
+    expect(winnerTeam(t, 20)).toBe(1);
+  });
+  it("draw when both teams are dead, or after maxTurns", () => {
+    const s = base();
+    s.units[0]!.alive = false;
+    s.units[1]!.alive = false;
+    expect(winnerTeam(s, 20)).toBe("draw");
+    const t = base();
+    t.turn = 21;
+    expect(winnerTeam(t, 20)).toBe("draw");
+    t.turn = 20;
+    expect(winnerTeam(t, 20)).toBeNull();
+  });
+  it("a dead team beats the turn limit", () => {
+    const s = base();
+    s.turn = 99;
+    s.units[1]!.alive = false;
+    expect(winnerTeam(s, 20)).toBe(0);
   });
 });
 

@@ -5,12 +5,14 @@ import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { AccountService, MemoryAccountStore, type AccountStore } from "./accounts.js";
 import { realClock, type Clock } from "./clock.js";
 import { loadGameData, type GameData, type Settings } from "./data.js";
-import { Match } from "./match.js";
+import { ChallengeBook, type Challenge } from "./challenges.js";
+import { Match, type MatchResult } from "./match.js";
 import {
   MAX_MESSAGE_BYTES,
   PROTOCOL_VERSION,
   parseClientMessage,
   type Character,
+  type ChallengeCloseReason,
   type ClientMessage,
   type ErrorCode,
   type ServerMessage,
@@ -79,6 +81,8 @@ interface Session {
   character: Character | null;
   entityId: number | null;
   match: Match | null;
+  /** Vị trí của người chơi trong trận (PvP: 0 = người mời, 1 = người nhận). */
+  slot: number;
   queue: Promise<void>;
 }
 
@@ -118,10 +122,103 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
     });
   }
 
+  /** Đặt người chơi vào bản đồ thế giới (điểm xuất phát), kèm hồ sơ hiển thị, rồi gửi world_state. */
+  function enterWorld(s: Session, character: Character, mapId: string): void {
+    const p = world.addPlayer(s.key!, character.name, mapId);
+    world.setProfile(p.id, character.sign, character.level);
+    s.entityId = p.id;
+    sendWorldState(s, p);
+  }
+
+  /** Kết thúc trận: gỡ khóa trận, đưa nhân vật mới về thế giới trên kết nối hiện tại của tài khoản (nếu có). */
+  function returnToWorld(key: string, old: Session, latest: Character, mapId: string): void {
+    matchKeys.delete(key);
+    old.match = null;
+    const cur = sessionsByKey.get(key);
+    if (!cur || cur.closed) return;
+    cur.character = latest;
+    if (cur !== old) send(cur.ws, { v: PROTOCOL_VERSION, type: "character", character: latest });
+    if (cur.entityId !== null) return;
+    enterWorld(cur, latest, mapId);
+  }
+
+  // ---------- thách đấu (docs/08) ----------
+
+  const sessionOfKey = (key: string): Session | undefined => sessionsByKey.get(key);
+
+  function announceClosed(c: Challenge, reason: ChallengeCloseReason): void {
+    for (const key of [c.fromKey, c.toKey]) {
+      const t = sessionOfKey(key);
+      if (t) send(t.ws, { v: PROTOCOL_VERSION, type: "challenge_closed", challengeId: c.id, reason });
+    }
+  }
+
+  const challenges = new ChallengeBook(
+    clock,
+    data.settings.challengeTimeoutSeconds * 1000,
+    data.settings.challengeRetrySeconds * 1000,
+    (c) => announceClosed(c, "expired"),
+  );
+
+  /** Đóng lời mời đang chờ của người chơi (nếu có) với lý do cho trước và báo cả hai bên. */
+  function closeChallengeOf(key: string | null, reason: ChallengeCloseReason): void {
+    if (key === null) return;
+    const c = challenges.ofPlayer(key);
+    if (c && challenges.close(c.id, reason)) announceClosed(c, reason);
+  }
+
+  /** Đang ở bản đồ loại thành (khu an toàn) và không trong trận. */
+  function inCity(p: PlayerEntity): boolean {
+    return world.mapDef(p.mapId).kind === "thanh" && !inMatch(p.ownerKey);
+  }
+
+  function startPvpMatch(a: Session, b: Session): void {
+    const sides = [a, b] as const;
+    const keys = [a.key!, b.key!] as const;
+    const names = [a.username!, b.username!] as const;
+    for (const s of sides) {
+      world.removePlayer(s.entityId!);
+      s.entityId = null;
+    }
+    const latest: Character[] = [a.character!, b.character!];
+    const mk = (s: Session, i: number) => ({
+      name: latest[i]!.name,
+      sign: latest[i]!.sign,
+      gunId: latest[i]!.gunId,
+      send: (m: ServerMessage) => send(s.ws, m),
+      isConnected: () => !s.closed && s.ws.readyState === s.ws.OPEN,
+    });
+    const match: Match = new Match({
+      mode: "pvp",
+      id: randomUUID(),
+      data,
+      clock,
+      seed: opts.seed,
+      players: [mk(a, 0), mk(b, 1)],
+      settle: async (results: MatchResult[]) => {
+        for (let i = 0; i < 2; i++) latest[i] = (await accounts.recordPvp(names[i]!, results[i]!)) ?? latest[i]!;
+        return [...latest];
+      },
+      onDone: () => {
+        matches.delete(match);
+        sides.forEach((s, i) => returnToWorld(keys[i]!, s, latest[i]!, data.startMapId));
+      },
+    });
+    a.slot = 0;
+    b.slot = 1;
+    a.match = match;
+    b.match = match;
+    matches.add(match);
+    for (const k of keys) matchKeys.add(k);
+    match.start();
+  }
+
   function startMatch(player: PlayerEntity, monster: MonsterEntity, mapId: string): void {
     const s = sessionOfEntity(player);
     if (!s || !s.character || !s.username || !s.key) return;
+    closeChallengeOf(s.key, "unavailable");
     s.entityId = null;
+    s.slot = 0;
     const key = s.key;
     const username = s.username;
     const def = data.monsters[monster.monsterId]!;
@@ -145,17 +242,8 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
       },
       onDone: () => {
         matches.delete(match);
-        matchKeys.delete(key);
-        s.match = null;
-        // trả người chơi về điểm xuất phát vùng săn, trên kết nối hiện tại của tài khoản (nếu có)
-        const cur = sessionsByKey.get(key);
-        if (!cur || cur.closed) return;
-        cur.character = latest;
-        if (cur !== s) send(cur.ws, { v: PROTOCOL_VERSION, type: "character", character: latest });
-        if (cur.entityId !== null) return;
-        const p = world.addPlayer(key, latest.name, mapId);
-        cur.entityId = p.id;
-        sendWorldState(cur, p);
+        // trả người chơi về điểm xuất phát vùng săn
+        returnToWorld(key, s, latest, mapId);
       },
     });
     s.match = match;
@@ -169,6 +257,7 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
     random: opts.random,
     events: {
       onTransfer: (p, _to) => {
+        closeChallengeOf(p.ownerKey, "unavailable"); // rời thành qua cổng: lời mời hết hiệu lực
         const s = sessionOfEntity(p);
         if (s) sendWorldState(s, p);
       },
@@ -178,6 +267,8 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
 
   function cleanup(s: Session): void {
     s.closed = true;
+    // chỉ khi kết nối này còn là kết nối hiện tại của tài khoản (kết nối đã bị thay thế thì lời mời thuộc về kết nối mới)
+    if (s.key !== null && sessionsByKey.get(s.key) === s) closeChallengeOf(s.key, "unavailable");
     if (s.key !== null && sessionsByKey.get(s.key) === s) sessionsByKey.delete(s.key);
     if (s.entityId !== null) world.removePlayer(s.entityId);
     s.entityId = null;
@@ -228,9 +319,7 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
       }
       case "enter_world": {
         if (s.key === null || s.character === null || s.entityId !== null || inMatch(s.key)) return fail("not_allowed");
-        const p = world.addPlayer(s.key, s.character.name, data.startMapId);
-        s.entityId = p.id;
-        sendWorldState(s, p);
+        enterWorld(s, s.character, data.startMapId);
         return;
       }
       case "move_to": {
@@ -238,16 +327,69 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
         world.setTarget(s.entityId, msg.x, msg.y);
         return;
       }
+      case "challenge": {
+        const me = s.entityId !== null ? world.getPlayer(s.entityId) : undefined;
+        const target = world.getPlayer(msg.targetEntityId);
+        if (!me || !target || me.id === target.id || !inCity(me) || !inCity(target)) return fail("not_allowed");
+        const ts = sessionOfEntity(target);
+        if (!ts || ts.closed || !ts.character || !s.character) return fail("not_allowed");
+        const c = challenges.open(me.ownerKey, target.ownerKey);
+        if (!c) return fail("not_allowed");
+        send(s.ws, {
+          v: PROTOCOL_VERSION,
+          type: "challenge_sent",
+          challengeId: c.id,
+          targetName: ts.character.name,
+          expiresAt: c.expiresAt,
+        });
+        send(ts.ws, {
+          v: PROTOCOL_VERSION,
+          type: "challenge_received",
+          challengeId: c.id,
+          fromName: s.character.name,
+          fromSign: s.character.sign,
+          fromLevel: s.character.level,
+          expiresAt: c.expiresAt,
+        });
+        return;
+      }
+      case "challenge_reply": {
+        const c = challenges.get(msg.challengeId);
+        if (!c || c.toKey !== s.key) return fail("not_allowed"); // chỉ người nhận
+        if (!msg.accept) {
+          challenges.close(c.id, "declined");
+          announceClosed(c, "declined");
+          return;
+        }
+        const a = sessionOfKey(c.fromKey);
+        const pa = a?.entityId != null ? world.getPlayer(a.entityId) : undefined;
+        const pb = s.entityId !== null ? world.getPlayer(s.entityId) : undefined;
+        if (!a || a.closed || !a.character || !s.character || !pa || !pb || !inCity(pa) || !inCity(pb)) {
+          closeChallengeOf(s.key, "unavailable");
+          return;
+        }
+        challenges.close(c.id, "accepted");
+        announceClosed(c, "accepted");
+        startPvpMatch(a, s);
+        return;
+      }
+      case "challenge_cancel": {
+        const c = challenges.get(msg.challengeId);
+        if (!c || c.fromKey !== s.key) return fail("not_allowed"); // chỉ người mời
+        challenges.close(c.id, "cancelled");
+        announceClosed(c, "cancelled");
+        return;
+      }
       case "battle_move": {
-        if (!s.match || s.match.handleMove(msg.col) !== "ok") return fail("not_allowed");
+        if (!s.match || s.match.handleMove(msg.col, s.slot) !== "ok") return fail("not_allowed");
         return;
       }
       case "battle_shot": {
-        if (!s.match || s.match.handleShot(msg.angle, msg.power, msg.facing, msg.gunId) !== "ok") return fail("not_allowed");
+        if (!s.match || s.match.handleShot(msg.angle, msg.power, msg.facing, msg.gunId, s.slot) !== "ok") return fail("not_allowed");
         return;
       }
       case "aim_preview": {
-        const r = s.match?.handlePreview(msg.angle, msg.power, msg.facing, msg.gunId);
+        const r = s.match?.handlePreview(msg.angle, msg.power, msg.facing, msg.gunId, s.slot);
         if (r === undefined || r === "not_allowed") return fail("not_allowed");
         return; // "dropped": bỏ qua lặng lẽ
       }
@@ -268,6 +410,7 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
         character: null,
         entityId: null,
         match: null,
+        slot: 0,
         queue: Promise.resolve(),
       };
 
@@ -362,6 +505,7 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
         close: () =>
           new Promise<void>((res) => {
             stopTick();
+            challenges.dispose();
             for (const m of matches) m.abort();
             matches.clear();
             for (const c of wss.clients) c.terminate();

@@ -14,6 +14,9 @@ export interface PlayerEntity {
   mapId: string;
   ownerKey: string;
   target: { x: number; y: number } | null;
+  /** Hồ sơ hiển thị (docs/08): đặt qua setProfile. */
+  sign?: string;
+  level?: number;
 }
 export interface MonsterEntity {
   id: number;
@@ -163,6 +166,13 @@ export class World {
     if (!m) throw new Error(`bản đồ không có: ${mapId}`);
     return m;
   }
+  setProfile(id: number, sign: string, level: number): void {
+    const p = this.players.get(id);
+    if (p) {
+      p.sign = sign;
+      p.level = level;
+    }
+  }
   setTarget(id: number, x: number, y: number): void {
     const p = this.players.get(id);
     if (p) p.target = { x, y };
@@ -184,7 +194,12 @@ export class World {
   }
   entities(mapId: string): Entity[] {
     const out: Entity[] = [];
-    for (const p of this.playersIn(mapId)) out.push({ id: p.id, kind: "player", name: p.name, x: round2(p.x), y: round2(p.y) });
+    for (const p of this.playersIn(mapId)) {
+      const e: Entity = { id: p.id, kind: "player", name: p.name, x: round2(p.x), y: round2(p.y) };
+      if (p.sign !== undefined) e.sign = p.sign;
+      if (p.level !== undefined) e.level = p.level;
+      out.push(e);
+    }
     for (const m of this.monstersIn(mapId)) {
       out.push({ id: m.id, kind: "monster", name: m.name, x: round2(m.x), y: round2(m.y), monsterId: m.monsterId });
     }

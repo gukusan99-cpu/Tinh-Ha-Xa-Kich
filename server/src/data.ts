@@ -43,6 +43,9 @@ export interface BattleMapDef {
   rows: string[];
   playerSpawnCols: number[];
   monsterSpawnCols: number[];
+  /** Cột xuất phát của đội 0 / đội 1 trong PvP; bản đồ không khai báo thì lấy playerSpawnCols / monsterSpawnCols. */
+  team0SpawnCols: number[];
+  team1SpawnCols: number[];
 }
 export interface MonsterDef {
   id: string;
@@ -82,6 +85,10 @@ export interface Settings {
   contactRadiusTiles: number;
   monsterRespawnSeconds: number;
   worldTickHz: number;
+  challengeTimeoutSeconds: number;
+  challengeRetrySeconds: number;
+  pvpMaxTurns: number;
+  pvpBattleMapId: string;
 }
 export interface GameData {
   battle: BattleConfig;
@@ -207,6 +214,8 @@ function loadWorldMap(file: string): WorldMapDef {
 function loadBattleMap(file: string): BattleMapDef {
   const w = `data/tran/${file}`;
   const o = readJson(`tran/${file}`);
+  const playerSpawnCols = intList(o, "playerSpawnCols", w);
+  const monsterSpawnCols = intList(o, "monsterSpawnCols", w);
   return {
     id: str(o, "id", w),
     name: str(o, "ten", w),
@@ -216,8 +225,10 @@ function loadBattleMap(file: string): BattleMapDef {
       if (typeof r !== "string") throw new Error(`${w}: rows phải là chuỗi`);
       return r;
     }),
-    playerSpawnCols: intList(o, "playerSpawnCols", w),
-    monsterSpawnCols: intList(o, "monsterSpawnCols", w),
+    playerSpawnCols,
+    monsterSpawnCols,
+    team0SpawnCols: o["team0SpawnCols"] === undefined ? [...playerSpawnCols] : intList(o, "team0SpawnCols", w),
+    team1SpawnCols: o["team1SpawnCols"] === undefined ? [...monsterSpawnCols] : intList(o, "team1SpawnCols", w),
   };
 }
 
@@ -233,6 +244,10 @@ export function loadGameData(): GameData {
     contactRadiusTiles: num(bal, "contactRadiusTiles", wb),
     monsterRespawnSeconds: num(bal, "monsterRespawnSeconds", wb),
     worldTickHz: num(bal, "worldTickHz", wb),
+    challengeTimeoutSeconds: num(bal, "challengeTimeoutSeconds", wb),
+    challengeRetrySeconds: num(bal, "challengeRetrySeconds", wb),
+    pvpMaxTurns: num(bal, "pvpMaxTurns", wb),
+    pvpBattleMapId: str(bal, "pvpBattleMapId", wb),
   };
 
   const nv = readJson("nhan-vat.json");
@@ -350,6 +365,13 @@ export function validateGameData(d: GameData): void {
   if (!Number.isInteger(s.maxTurnsPerMatch) || s.maxTurnsPerMatch < 1) {
     throw new Error("settings.maxTurnsPerMatch: phải là số nguyên ≥ 1");
   }
+  for (const k of ["challengeTimeoutSeconds", "challengeRetrySeconds"] as const) positive(s[k], `settings.${k}`);
+  if (!Number.isInteger(s.pvpMaxTurns) || s.pvpMaxTurns < 1) throw new Error("settings.pvpMaxTurns: phải là số nguyên ≥ 1");
+  const arena = d.battleMaps[s.pvpBattleMapId];
+  if (!arena) throw new Error(`settings.pvpBattleMapId: bản đồ trận "${s.pvpBattleMapId}" không có`);
+  if (arena.team0SpawnCols.length < 1 || arena.team1SpawnCols.length < 1) {
+    throw new Error(`bản đồ trận ${arena.id}: PvP cần team0SpawnCols và team1SpawnCols không rỗng`);
+  }
   for (const k of ["simHz", "trajectorySampleHz", "maxFlightSeconds", "maxProjectileSpeedTilesPerSec", "unitRadiusTiles"] as const) {
     positive(d.battle[k], `battle.${k}`);
   }
@@ -403,7 +425,7 @@ export function validateGameData(d: GameData): void {
     const w = `bản đồ trận ${m.id}`;
     checkGrid(m, w);
     if (m.playerSpawnCols.length < 1) throw new Error(`${w}: thiếu playerSpawnCols`);
-    for (const c of [...m.playerSpawnCols, ...m.monsterSpawnCols]) {
+    for (const c of [...m.playerSpawnCols, ...m.monsterSpawnCols, ...m.team0SpawnCols, ...m.team1SpawnCols]) {
       if (c < 0 || c >= m.width) throw new Error(`${w}: cột xuất phát ${c} ngoài bản đồ`);
       if (!m.rows.some((r) => r[c] === "#")) throw new Error(`${w}: cột xuất phát ${c} không có đất`);
     }

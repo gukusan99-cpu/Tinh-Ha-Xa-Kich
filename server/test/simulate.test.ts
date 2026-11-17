@@ -1,5 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { runMany, simulateMatch } from "../src/sim/simulate.js";
+import { pvpPairs, runMany, runPvpPair, simulateMatch, simulatePvpMatch } from "../src/sim/simulate.js";
+
+describe("simulate PvP", () => {
+  it("10 cặp cung kể cả cùng cung", () => {
+    const pairs = pvpPairs(["a", "b", "c", "d"]);
+    expect(pairs).toHaveLength(10);
+    expect(pairs.filter(([x, y]) => x === y)).toHaveLength(4);
+  });
+
+  it("tất định theo seed, kể cả khi đổi bên", () => {
+    for (const swap of [false, true]) {
+      const o = { signA: "bach_duong", signB: "xu_nu", seed: 11, swap };
+      expect(simulatePvpMatch(o)).toEqual(simulatePvpMatch(o));
+    }
+    expect(() => simulatePvpMatch({ signA: "ma_ket", signB: "xu_nu", seed: 1, swap: false })).toThrow(/ma_ket/);
+  });
+
+  it("runPvpPair: thắng A + thắng B + hòa = n, đổi bên một nửa số trận", () => {
+    const r = runPvpPair("kim_nguu", "bao_binh", 6, 3);
+    expect(r.n).toBe(6);
+    expect(r.aWins + r.bWins + r.draws).toBe(6);
+    expect(r.team0Wins).toBeLessThanOrEqual(6);
+    expect(r.swapped).toBe(3);
+  }, 120_000);
+});
 
 describe("simulate", () => {
   it("tất định theo seed", () => {

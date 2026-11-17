@@ -35,7 +35,7 @@ function harness(tweak: (d: GameData) => void = () => {}, sign = "xu_nu", turnSe
     monster,
     settle: async (outcome, exp): Promise<Character> => {
       state.settled.push([outcome, exp]);
-      return { name: "Bob", sign: "xu_nu", level: 1, exp, gunId: "g" };
+      return { name: "Bob", sign: "xu_nu", level: 1, exp, gunId: "g", pvp: { wins: 0, losses: 0, draws: 0 } };
     },
     onDone: () => {
       state.done = true;
@@ -56,7 +56,7 @@ describe("Match: khởi động", () => {
     const h = harness();
     h.match.start();
     const start = h.of("match_start")[0];
-    expect(start).toMatchObject({ v: 1, matchId: "m1", maxTurns: h.data.settings.maxTurnsPerMatch });
+    expect(start).toMatchObject({ v: 1, matchId: "m1", mode: "pve", maxTurns: h.data.settings.maxTurnsPerMatch });
     expect(start.map).toMatchObject({ width: 60, height: 30 });
     expect(start.map.rows).toHaveLength(30);
     const units = start.units as any[];

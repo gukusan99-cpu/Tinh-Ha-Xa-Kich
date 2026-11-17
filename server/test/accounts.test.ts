@@ -50,7 +50,10 @@ describe("AccountService", () => {
     const s = mk();
     await s.register("bob", "secret1");
     const c = await s.createCharacter("bob", "Sao Băng", "kim_nguu");
-    expect(c).toEqual({ ok: true, character: { name: "Sao Băng", sign: "kim_nguu", level: 1, exp: 0, gunId: "g" } });
+    expect(c).toEqual({
+      ok: true,
+      character: { name: "Sao Băng", sign: "kim_nguu", level: 1, exp: 0, gunId: "g", pvp: { wins: 0, losses: 0, draws: 0 } },
+    });
     expect(await s.createCharacter("bob", "Khác", "xu_nu")).toEqual({ ok: false, code: "exists" });
     const again = await s.login("bob", "secret1");
     expect(again.ok && again.account.character?.sign).toBe("kim_nguu");
@@ -74,8 +77,24 @@ describe("AccountService", () => {
   });
 });
 
+describe("recordPvp", () => {
+  it("cộng thắng/thua/hòa, không đổi exp, null nếu không có nhân vật", async () => {
+    const s = mk();
+    await s.register("bob", "secret1");
+    await s.createCharacter("bob", "Bob", "xu_nu");
+    expect((await s.recordPvp("bob", "win"))?.pvp).toEqual({ wins: 1, losses: 0, draws: 0 });
+    await s.recordPvp("bob", "lose");
+    await s.recordPvp("bob", "lose");
+    const c = await s.recordPvp("bob", "draw");
+    expect(c).toMatchObject({ exp: 0, level: 1, pvp: { wins: 1, losses: 2, draws: 1 } });
+    const again = await s.login("bob", "secret1");
+    expect(again.ok && again.account.character?.pvp).toEqual({ wins: 1, losses: 2, draws: 1 });
+    expect(await s.recordPvp("nobody", "win")).toBeNull();
+  });
+});
+
 describe("applyExp", () => {
-  const base = { name: "n", sign: "xu_nu", level: 1, exp: 0, gunId: "g" };
+  const base = { name: "n", sign: "xu_nu", level: 1, exp: 0, gunId: "g", pvp: { wins: 0, losses: 0, draws: 0 } };
   it("lên cấp khi exp ≥ expPerLevel × level, phần dư giữ lại", () => {
     expect(applyExp(base, 99, 100)).toMatchObject({ level: 1, exp: 99 });
     expect(applyExp(base, 100, 100)).toMatchObject({ level: 2, exp: 0 });

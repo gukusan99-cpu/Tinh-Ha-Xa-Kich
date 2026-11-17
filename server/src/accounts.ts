@@ -129,13 +129,22 @@ export class AccountService {
       return { ok: false, code: "bad_credentials" };
     }
     if (!(await verifyPassword(password, account.passwordHash))) return { ok: false, code: "bad_credentials" };
+    // nhân vật lưu trước khi có thành tích PvP: mặc định bằng 0
+    if (account.character && !account.character.pvp) account.character.pvp = { wins: 0, losses: 0, draws: 0 };
     return { ok: true, account };
   }
 
   async createCharacter(username: string, rawName: string, sign: string): Promise<CharacterResult> {
     const name = normalizeCharacterName(rawName);
     if (name === null || !this.rules.signs.includes(sign)) return { ok: false, code: "invalid" };
-    const character: Character = { name, sign, level: 1, exp: 0, gunId: this.rules.startingGunId };
+    const character: Character = {
+      name,
+      sign,
+      level: 1,
+      exp: 0,
+      gunId: this.rules.startingGunId,
+      pvp: { wins: 0, losses: 0, draws: 0 },
+    };
     if (!(await this.store.createCharacter(username, character))) return { ok: false, code: "exists" };
     return { ok: true, character };
   }
@@ -145,6 +154,19 @@ export class AccountService {
     const account = await this.store.find(username);
     if (!account?.character) return null;
     const next = applyExp(account.character, gain, this.rules.expPerLevel);
+    await this.store.saveCharacter(username, next);
+    return next;
+  }
+
+  /** Ghi một kết quả thách đấu vào thành tích; không đổi exp. Null nếu không có tài khoản/nhân vật. */
+  async recordPvp(username: string, result: "win" | "lose" | "draw"): Promise<Character | null> {
+    const account = await this.store.find(username);
+    if (!account?.character) return null;
+    const pvp = { ...(account.character.pvp ?? { wins: 0, losses: 0, draws: 0 }) };
+    if (result === "win") pvp.wins++;
+    else if (result === "lose") pvp.losses++;
+    else pvp.draws++;
+    const next: Character = { ...account.character, pvp };
     await this.store.saveCharacter(username, next);
     return next;
   }

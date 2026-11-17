@@ -4,6 +4,7 @@
  * Ghi đè giá trị chỉ áp dụng trong bộ nhớ, không đụng file data/. Bot không di chuyển (như Giai đoạn 1).
  */
 import {
+  applyMoves,
   chooseMonsterShot,
   createBattleState,
   mulberry32,
@@ -11,6 +12,7 @@ import {
   probeShot,
   resolveShots,
   validateShot,
+  winnerTeam,
 } from "../battle/engine.js";
 import type { BattleConfig, BattleState, GunStats, ShotCommand, SignId, Unit } from "../battle/types.js";
 import { loadGameData, type GameData } from "../data.js";
@@ -374,4 +376,118 @@ export function runMany(policy: Policy, n: number, overrides: Overrides = {}, ba
     else draw++;
   }
   return { n, win: win / n, lose: lose / n, draw: draw / n, avgTurns: turns / n, avgHpOnWin: win ? hpWin / win : 0 };
+}
+
+// ---------- PvP (docs/08): hai bot "giỏi" có di chuyển né ----------
+
+export interface PvpOptions {
+  signA: string;
+  signB: string;
+  seed: number;
+  /** true: A đứng đội 1 (bên phải), B đội 0. Đổi bên để loại bỏ thiên vị của bản đồ. */
+  swap: boolean;
+  data?: GameData;
+}
+export interface PvpResult {
+  winner: "a" | "b" | "draw";
+  winnerTeam: 0 | 1 | "draw";
+  turns: number;
+}
+
+/**
+ * Một trận PvP: dựng giống Match (bản đồ pvpBattleMapId, cột team0/team1, nội lực, bộ súng theo cung, pvpMaxTurns).
+ * Mỗi lượt cả hai né: đích ngẫu nhiên (theo seed) trong moveRangeTiles, nằm trong bản đồ; rồi bắn bằng chính sách "gioi".
+ */
+export function simulatePvpMatch(opts: PvpOptions): PvpResult {
+  const data = opts.data ?? getData();
+  const ch = data.character;
+  for (const s of [opts.signA, opts.signB]) if (!ch.signDefs[s]) throw new Error(`cung không có trong dữ liệu: ${s}`);
+  const map = data.battleMaps[data.settings.pvpBattleMapId]!;
+  const cfg = data.battle;
+  const guns = data.guns;
+  const maxTurns = data.settings.pvpMaxTurns;
+
+  const signOf = (team: 0 | 1): string => ((team === 0) !== opts.swap ? opts.signA : opts.signB);
+  const mk = (id: number, team: 0 | 1, col: number): Omit<Unit, "y" | "alive"> => {
+    const def = ch.signDefs[signOf(team)]!;
+    return {
+      id,
+      kind: "player",
+      name: `bot${id}`,
+      team,
+      col,
+      hp: ch.baseHp,
+      maxHp: ch.baseHp,
+      facing: team === 0 ? 1 : -1,
+      gunId: ch.commonGunIds[0]!,
+      guns: [...def.gunIds, ...ch.commonGunIds],
+      sign: def.id,
+      passive: def.passive,
+      energy: ch.energyStart,
+      cooldowns: {},
+      statuses: [],
+    };
+  };
+  let state: BattleState = createBattleState(map, [mk(1, 0, map.team0SpawnCols[0]!), mk(2, 1, map.team1SpawnCols[0]!)]);
+
+  const turnRng = mulberry32(opts.seed);
+  const dodgeRng = mulberry32((opts.seed ^ 0x51ed270b) >>> 0);
+  const range = cfg.moveRangeTiles;
+
+  let w = winnerTeam(state, maxTurns);
+  while (w === null) {
+    const moves = state.units
+      .filter((u) => u.alive)
+      .map((u) => ({
+        unitId: u.id,
+        col: Math.max(0, Math.min(state.width - 1, u.col + Math.floor(dodgeRng() * (2 * range + 1)) - range)),
+      }));
+    state = applyMoves(state, moves, cfg).state;
+    const cmds: ShotCommand[] = [];
+    for (const u of state.units) if (u.alive) cmds.push(goodShot(state, u, guns, cfg, 1));
+    const seed = (turnRng() * 4294967296) >>> 0;
+    state = resolveShots(state, cmds, guns, cfg, seed).state;
+    w = winnerTeam(state, maxTurns);
+  }
+  const winner = w === "draw" ? "draw" : (w === 0) !== opts.swap ? "a" : "b";
+  return { winner, winnerTeam: w, turns: state.turn - 1 };
+}
+
+export interface PvpPairSummary {
+  a: string;
+  b: string;
+  n: number;
+  aWins: number;
+  bWins: number;
+  draws: number;
+  /** Số trận đội 0 (bên trái) thắng, bất kể cung: đo độ thiên vị của bản đồ. */
+  team0Wins: number;
+  /** Số trận A đứng bên phải. */
+  swapped: number;
+  avgTurns: number;
+}
+
+/** Mọi cặp cung (i ≤ j), kể cả cùng cung. */
+export function pvpPairs(signs: string[]): [string, string][] {
+  const out: [string, string][] = [];
+  for (let i = 0; i < signs.length; i++) for (let j = i; j < signs.length; j++) out.push([signs[i]!, signs[j]!]);
+  return out;
+}
+
+/** n trận giữa a và b; trận lẻ đổi bên (A đứng bên phải). */
+export function runPvpPair(a: string, b: string, n: number, baseSeed = 1, data?: GameData): PvpPairSummary {
+  const s: PvpPairSummary = { a, b, n, aWins: 0, bWins: 0, draws: 0, team0Wins: 0, swapped: 0, avgTurns: 0 };
+  let turns = 0;
+  for (let i = 0; i < n; i++) {
+    const swap = i % 2 === 1;
+    if (swap) s.swapped++;
+    const r = simulatePvpMatch({ signA: a, signB: b, seed: (baseSeed + i * 7919) >>> 0, swap, data });
+    turns += r.turns;
+    if (r.winner === "a") s.aWins++;
+    else if (r.winner === "b") s.bWins++;
+    else s.draws++;
+    if (r.winnerTeam === 0) s.team0Wins++;
+  }
+  s.avgTurns = n > 0 ? turns / n : 0;
+  return s;
 }
