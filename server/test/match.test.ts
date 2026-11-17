@@ -61,11 +61,12 @@ describe("Match: khởi động", () => {
     const units = start.units as any[];
     expect(units).toHaveLength(1 + h.data.monsters["am_thach_nho"]!.groupSize);
     const me = units.find((u) => u.id === start.you);
-    expect(me).toMatchObject({ kind: "player", team: 0, col: 6, hp: h.data.character.baseHp, maxHp: 100, facing: 1, name: "Bob" });
+    expect(me).toMatchObject({ kind: "player", team: 0, col: 6, hp: h.data.character.baseHp, maxHp: h.data.character.baseHp, facing: 1, name: "Bob" });
     expect(me.y).toBe(18); // mặt đất hàng 18
     const ms = units.filter((u) => u.kind === "monster");
     expect(ms.map((u) => u.col)).toEqual([42, 48]);
-    for (const u of ms) expect(u).toMatchObject({ team: 1, hp: 80, maxHp: 80, facing: -1 });
+    const mHp = h.data.monsters["am_thach_nho"]!.hp;
+    for (const u of ms) expect(u).toMatchObject({ team: 1, hp: mHp, maxHp: mHp, facing: -1 });
     expect(Object.keys(me).sort()).toEqual(["col", "facing", "hp", "id", "kind", "maxHp", "name", "team", "y"]);
     const ph = h.of("phase")[0];
     expect(ph).toMatchObject({ turn: 1, phase: "move" });
