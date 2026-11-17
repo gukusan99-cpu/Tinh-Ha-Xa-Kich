@@ -5,8 +5,10 @@
 import { randomBytes } from "node:crypto";
 import {
   applyMoves,
+  chooseMonsterMove,
   chooseMonsterShot,
   createBattleState,
+  monsterMoveRng,
   previewShot,
   resolveShots,
   validateShot,
@@ -78,6 +80,9 @@ export class Match {
   /** Giờ máy chủ lúc bắt đầu pha ngắm; mốc cho aimElapsedSeconds (không tin giờ client). */
   private aimStartedAt = 0;
   private readonly maxTurns: number;
+  private readonly battleMapId: string;
+  /** Seed của lượt, bốc sớm ở pha di chuyển khi có quái biết đi; pha bắn dùng lại để mỗi lượt chỉ bốc một seed. */
+  private turnSeed: number | null = null;
 
   constructor(p: MatchParams) {
     this.p = p;
@@ -145,10 +150,13 @@ export class Match {
           cooldowns: {},
           statuses: [],
           aiErrorTiles: monster.aiErrorTiles,
+          moveRangeTiles: monster.moveRangeTiles,
+          monsterId: monster.id,
         })),
       ];
       this.slots.push(newSlot(1, 0, p.player));
     }
+    this.battleMapId = map.id;
     this.state = createBattleState(map, units);
   }
 
@@ -188,6 +196,7 @@ export class Match {
         statuses: u.statuses.map((x) => ({ ...x })),
       };
       if (u.kind === "player") info.guns = [...u.guns];
+      else if (u.monsterId !== undefined) info.monsterId = u.monsterId;
       return info;
     });
     for (const slot of this.slots) {
@@ -196,6 +205,7 @@ export class Match {
         type: "match_start",
         matchId: this.p.id,
         mode: this.mode,
+        battleMapId: this.battleMapId,
         map: { width: s.width, height: s.height, rows: s.rows },
         units,
         you: slot.unitId,
@@ -320,6 +330,16 @@ export class Match {
       if (s.pendingMove !== null && this.alive(s)) cmds.push({ unitId: s.unitId, col: s.pendingMove });
       s.pendingMove = null;
     }
+    // quái biết đi quyết định trên trạng thái đầu pha, đồng thời với người chơi (docs/09)
+    const movers = this.state.units.filter((u) => u.kind === "monster" && u.alive && (u.moveRangeTiles ?? 0) > 0);
+    if (movers.length > 0) {
+      this.turnSeed = (this.p.seed ?? randomSeed)() >>> 0;
+      const rng = monsterMoveRng(this.turnSeed);
+      for (const u of movers) {
+        const c = chooseMonsterMove(this.state, u.id, this.p.data.guns, this.p.data.battle, rng);
+        if (c) cmds.push(c);
+      }
+    }
     const r = applyMoves(this.state, cmds, this.p.data.battle);
     this.state = r.state;
     this.broadcast({ v: PROTOCOL_VERSION, type: "moves_result", turn: this.turn, moves: r.moves });
@@ -344,7 +364,8 @@ export class Match {
     for (const u of this.state.units) {
       if (u.kind === "monster" && u.alive) cmds.push(chooseMonsterShot(this.state, u.id, this.p.data.guns, cfg));
     }
-    const seed = (this.p.seed ?? randomSeed)() >>> 0;
+    const seed = this.turnSeed ?? (this.p.seed ?? randomSeed)() >>> 0;
+    this.turnSeed = null;
     const r = resolveShots(this.state, cmds, this.p.data.guns, cfg, seed);
     this.state = r.state;
     const deaths = [...r.result.deaths];

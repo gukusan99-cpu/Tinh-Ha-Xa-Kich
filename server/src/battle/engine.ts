@@ -84,7 +84,7 @@ export function applyMoves(
     if (!u || !u.alive) continue;
     const target = Math.max(0, Math.min(state.width - 1, Math.trunc(cmd.col)));
     const dir = Math.sign(target - u.col);
-    let range = cfg.moveRangeTiles;
+    let range = u.moveRangeTiles ?? cfg.moveRangeTiles;
     const stunned = u.statuses.some((s) => s.type === "stun");
     for (const s of u.statuses) if (s.type === "slow") range = Math.max(0, range - s.tiles);
     if (stunned) range = 0;
@@ -674,10 +674,62 @@ export function chooseMonsterShot(
   cfg: BattleConfig,
 ): ShotCommand {
   void guns;
+  return planMonsterShot(state, unitId, cfg).cmd;
+}
+
+/** RNG di chuyển của quái, suy ra từ seed của lượt (độc lập với RNG bắn). */
+export function monsterMoveRng(turnSeed: number): () => number {
+  return mulberry32((turnSeed ^ 0x6d6f7665) >>> 0);
+}
+
+/**
+ * Quái có moveRangeTiles > 0 chọn cột đích trong tầm (docs/09): ưu tiên cột mà từ đó chooseMonsterShot
+ * chạm gần người chơi nhất; hòa thì cột xa người chơi gần nhất hơn; còn hòa thì chọn theo rng.
+ * Quyết định trên trạng thái đầu pha di chuyển (đồng thời với người chơi). Luôn gọi rng đúng một lần.
+ */
+export function chooseMonsterMove(
+  state: BattleState,
+  unitId: number,
+  guns: Record<string, GunStats>,
+  cfg: BattleConfig,
+  rng: () => number,
+): MoveCommand | null {
+  void guns;
+  const me = state.units.find((u) => u.id === unitId);
+  if (!me || !me.alive || me.kind !== "monster") return null;
+  const range = me.moveRangeTiles ?? 0;
+  if (range <= 0 || me.statuses.some((s) => s.type === "stun")) return null;
+  const enemies = state.units.filter((u) => u.team !== me.team && u.alive);
+  if (enemies.length === 0) return null;
+  const farFrom = (col: number): number => Math.min(...enemies.map((e) => Math.abs(e.col - col)));
+
+  const seen = new Set<number>();
+  const cands: { col: number; dist: number; far: number }[] = [];
+  for (let c = Math.max(0, me.col - range); c <= Math.min(state.width - 1, me.col + range); c++) {
+    const r = applyMoves(state, [{ unitId, col: c }], cfg);
+    const moved = r.state.units.find((u) => u.id === unitId)!;
+    if (seen.has(moved.col)) continue;
+    seen.add(moved.col);
+    cands.push({ col: moved.col, dist: planMonsterShot(r.state, unitId, cfg).dist, far: farFrom(moved.col) });
+  }
+  const EPS = 1e-9;
+  const bestDist = Math.min(...cands.map((c) => c.dist));
+  const near = cands.filter((c) => c.dist <= bestDist + EPS);
+  const bestFar = Math.max(...near.map((c) => c.far));
+  const pool = near.filter((c) => c.far === bestFar).sort((a, b) => a.col - b.col);
+  const pick = pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))]!;
+  return { unitId, col: pick.col };
+}
+
+function planMonsterShot(
+  state: BattleState,
+  unitId: number,
+  cfg: BattleConfig,
+): { cmd: ShotCommand; dist: number } {
   const me = state.units.find((u) => u.id === unitId);
   const gunId = me?.gunId ?? "";
   const fallback: ShotCommand = { unitId, angle: 45, power: 50, facing: me?.facing ?? -1, gunId, aimElapsedSeconds: 0 };
-  if (!me) return fallback;
+  if (!me) return { cmd: fallback, dist: Infinity };
   let target: Unit | null = null;
   let best = Infinity;
   for (const u of state.units) {
@@ -688,7 +740,7 @@ export function chooseMonsterShot(
       target = u;
     }
   }
-  if (!target) return fallback;
+  if (!target) return { cmd: fallback, dist: Infinity };
   const tx = target.col + 0.5;
   const ty = target.y - cfg.unitRadiusTiles;
 
@@ -697,7 +749,7 @@ export function chooseMonsterShot(
   const x0 = me.col + 0.5;
   const y0 = me.y - cfg.unitRadiusTiles;
   const step = cfg.aiAngleStepDegrees;
-  for (const facing of [-1, 1] as const) {
+  search: for (const facing of [-1, 1] as const) {
     for (let angle = step; angle <= cfg.aimAngleMaxDegrees; angle += step) {
       if (angle < cfg.aimAngleMinDegrees) continue;
       for (let power = 10; power <= 100; power += 5) {
@@ -719,11 +771,12 @@ export function chooseMonsterShot(
         if (dist < bestDist) {
           bestDist = dist;
           bestCmd = { unitId, angle, power, facing, gunId, aimElapsedSeconds: 0 };
+          if (dist === 0) break search; // trúng thẳng: không thể tốt hơn (kết quả giữ nguyên)
         }
       }
     }
   }
-  return bestCmd;
+  return { cmd: bestCmd, dist: bestDist };
 }
 
 /**

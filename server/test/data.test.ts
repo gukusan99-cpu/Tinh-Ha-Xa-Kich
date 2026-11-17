@@ -76,6 +76,37 @@ describe("nạp dữ liệu", () => {
     expect(() => validateGameData(d)).toThrow();
   });
 
+  it("nạp 3 loại quái, moveRangeTiles, cổng khóa cấp và các bản đồ vùng 2", () => {
+    const d = loadGameData();
+    expect(Object.keys(d.monsters)).toEqual(["am_thach_nho", "am_thach_gai", "am_thach_lon"]);
+    expect(d.monsters["am_thach_nho"]!.moveRangeTiles).toBe(0);
+    expect(d.monsters["am_thach_gai"]).toMatchObject({ moveRangeTiles: 3, groupSize: 2, gunId: "gai_lua" });
+    expect(d.guns["gai_lua"]!.burn).toBeDefined();
+    expect(d.monsters["am_thach_lon"]).toMatchObject({ moveRangeTiles: 0, groupSize: 1, gunId: "da_tang" });
+    expect(d.worldMaps["vung_san_2"]?.kind).toBe("vung_san");
+    expect(d.battleMaps["hem_van_thach_1"]).toBeDefined();
+    const portal = d.worldMaps["thanh"]!.portals.find((p) => p.toMapId === "vung_san_2");
+    expect(portal?.levelRequired).toBe(2);
+    expect(d.worldMaps["thanh"]!.portals.find((p) => p.toMapId === "vung_san_1")?.levelRequired).toBeUndefined();
+    expect(d.settings.portalLockedNoticeSeconds).toBe(3);
+  });
+
+  it("từ chối moveRangeTiles âm hoặc không nguyên, levelRequired sai, portalLockedNoticeSeconds ≤ 0", () => {
+    for (const bad of [-1, 1.5]) {
+      const d = testData();
+      d.monsters["am_thach_gai"]!.moveRangeTiles = bad;
+      expect(() => validateGameData(d)).toThrow(/moveRangeTiles/);
+    }
+    for (const bad of [0, 1.5]) {
+      const d = testData();
+      d.worldMaps["thanh"]!.portals[0]!.levelRequired = bad;
+      expect(() => validateGameData(d)).toThrow(/levelRequired/);
+    }
+    const e = testData();
+    e.settings.portalLockedNoticeSeconds = 0;
+    expect(() => validateGameData(e)).toThrow(/portalLockedNoticeSeconds/);
+  });
+
   it("từ chối súng chung không có", () => {
     const d = testData();
     d.character.commonGunIds = ["nope"];

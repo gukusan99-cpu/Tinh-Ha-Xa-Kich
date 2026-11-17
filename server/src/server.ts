@@ -262,6 +262,10 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
         if (s) sendWorldState(s, p);
       },
       onContact: (p, m, mapId) => startMatch(p, m, mapId),
+      onPortalLocked: (p, levelRequired) => {
+        const s = sessionOfEntity(p);
+        if (s) send(s.ws, { v: PROTOCOL_VERSION, type: "portal_locked", levelRequired });
+      },
     },
   });
 

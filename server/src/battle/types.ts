@@ -91,6 +91,10 @@ export interface Unit {
   statuses: Status[];
   /** Chỉ quái: độ lệch riêng thay cho deviationMaxTiles. */
   aiErrorTiles?: number;
+  /** Chỉ quái: số ô tối đa đi mỗi lượt (docs/09); thiếu hoặc 0 = đứng yên. Người chơi dùng `moveRangeTiles` của BattleConfig. */
+  moveRangeTiles?: number;
+  /** Chỉ quái: id loại quái (data/quai.json), gửi trong match_start. */
+  monsterId?: string;
   alive: boolean;
 }
 
@@ -203,6 +207,9 @@ export type MatchOutcome = "win" | "lose" | "draw" | null; // null: chưa kết 
  *   – lệnh không hợp lệ bị bỏ qua (như không bắn).
  * previewShot(state, cmd, guns, cfg, fraction): [number, number][]   – Súng kính, không lệch
  * chooseMonsterShot(state, unitId, guns, cfg): ShotCommand
+ * chooseMonsterMove(state, unitId, guns, cfg, rng): MoveCommand | null   – quái có moveRangeTiles > 0 (docs/09):
+ *     chọn cột trong tầm sao cho chooseMonsterShot từ đó chạm gần người chơi nhất; hòa thì cột xa người chơi hơn,
+ *     hòa nữa thì rng. null nếu không đi (choáng, tầm 0, không có địch).
  * winnerTeam(state, maxTurns): 0 | 1 | "draw" | null
  *   – đội còn người sống khi đội kia hết; "draw" nếu cả hai hết cùng lúc hoặc state.turn > maxTurns;
  *     null nếu chưa kết thúc. Dùng cho PvE và PvP (docs/08).

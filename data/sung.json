@@ -23,6 +23,32 @@
       "cooldownTurns": 0
     },
     {
+      "id": "gai_lua",
+      "ten": "Gai lửa",
+      "tang": "quai",
+      "sign": null,
+      "kind": "projectile",
+      "damage": 26,
+      "blastRadiusTiles": 1.5,
+      "energyCost": 0,
+      "cooldownTurns": 0,
+      "burn": {
+        "turns": 2,
+        "damagePerTurn": 6
+      }
+    },
+    {
+      "id": "da_tang",
+      "ten": "Đá tảng",
+      "tang": "quai",
+      "sign": null,
+      "kind": "projectile",
+      "damage": 45,
+      "blastRadiusTiles": 2.5,
+      "energyCost": 0,
+      "cooldownTurns": 0
+    },
+    {
       "id": "phao_dan_no",
       "ten": "Pháo đạn nổ",
       "tang": "cung",

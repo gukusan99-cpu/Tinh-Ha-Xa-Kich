@@ -17,6 +17,8 @@ export interface PlayerEntity {
   /** Hồ sơ hiển thị (docs/08): đặt qua setProfile. */
   sign?: string;
   level?: number;
+  /** Giờ thế giới sớm nhất được gửi lại portal_locked cho người này. */
+  lockedNoticeAt?: number;
 }
 export interface MonsterEntity {
   id: number;
@@ -34,6 +36,8 @@ export interface MonsterEntity {
 export interface WorldEvents {
   onTransfer(player: PlayerEntity, toMapId: string): void;
   onContact(player: PlayerEntity, monster: MonsterEntity, mapId: string): void;
+  /** Người chơi đứng vào cổng khóa cấp; gọi tối đa một lần mỗi portalLockedNoticeSeconds. */
+  onPortalLocked?(player: PlayerEntity, levelRequired: number): void;
 }
 
 export function isBlocked(map: WorldMapDef, x: number, y: number): boolean {
@@ -242,6 +246,13 @@ export class World {
     const map = this.mapDef(p.mapId);
     for (const portal of map.portals) {
       if (p.x >= portal.x && p.x < portal.x + portal.w && p.y >= portal.y && p.y < portal.y + portal.h) {
+        if (portal.levelRequired !== undefined && (p.level ?? 1) < portal.levelRequired) {
+          if (p.lockedNoticeAt === undefined || this.time >= p.lockedNoticeAt) {
+            p.lockedNoticeAt = this.time + this.data.settings.portalLockedNoticeSeconds;
+            this.events.onPortalLocked?.(p, portal.levelRequired);
+          }
+          continue;
+        }
         p.mapId = portal.toMapId;
         p.x = portal.toSpawn.x;
         p.y = portal.toSpawn.y;

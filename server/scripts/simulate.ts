@@ -1,5 +1,5 @@
 /**
- * CLI mô phỏng cân bằng: npx tsx scripts/simulate.ts [--n 1000] [--seed 1] [--sign <id>|all|none] [--sweep] [--override key=value ...]
+ * CLI mô phỏng cân bằng: npx tsx scripts/simulate.ts [--n 1000] [--seed 1] [--sign <id>|all|none] [--monster <id>|all] [--sweep] [--override key=value ...]
  * PvP (docs/08): npx tsx scripts/simulate.ts --pvp [--n 400] [--seed 1]  (mọi cặp cung, hai bot gioi có né, đổi bên nửa số trận)
  * Mặc định (không --sign): bảng theo từng cung. `--sign none` = chỉ súng chung, không nội tại.
  */
@@ -21,6 +21,8 @@ let seed = 1;
 let sweep = false;
 let pvp = false;
 let signArg = "all";
+/** "" = quái đầu tiên trong data/quai.json; "all" = bảng theo từng quái × cung; hoặc một id quái. */
+let monsterArg = "";
 const overrides: Overrides = {};
 
 for (let i = 0; i < argv.length; i++) {
@@ -30,6 +32,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--sweep") sweep = true;
   else if (a === "--pvp") pvp = true;
   else if (a === "--sign") signArg = argv[++i] ?? "";
+  else if (a === "--monster") monsterArg = argv[++i] ?? "";
   else if (a === "--override") {
     while (argv[i + 1] !== undefined && !argv[i + 1]!.startsWith("--")) {
       const [k, v] = argv[++i]!.split("=");
@@ -47,7 +50,28 @@ if (signArg !== "all" && signArg !== "none" && !allSigns.includes(signArg)) {
   throw new Error(`--sign không hợp lệ "${signArg}". Hợp lệ: all, none, ${allSigns.join(", ")}`);
 }
 
-if (pvp) {
+const monsterIds = Object.keys(getData().monsters);
+if (monsterArg !== "" && monsterArg !== "all" && !monsterIds.includes(monsterArg)) {
+  throw new Error(`--monster không hợp lệ "${monsterArg}". Hợp lệ: all, ${monsterIds.join(", ")}`);
+}
+const monsterId = monsterArg === "" || monsterArg === "all" ? undefined : monsterArg;
+
+if (monsterArg === "all" && !pvp && !sweep) {
+  const signs: (string | undefined)[] = signArg === "all" ? allSigns : signArg === "none" ? [undefined] : [signArg];
+  const t0 = Date.now();
+  console.log(`n=${n} seed=${seed} overrides=${JSON.stringify(overrides)}`);
+  console.log("monster          sign        gioi    | trung_binh | turns(gioi)");
+  for (const mid of monsterIds) {
+    for (const sign of signs) {
+      const g = runMany("gioi", n, overrides, seed, sign, mid);
+      const t = runMany("trung_binh", n, overrides, seed, sign, mid);
+      console.log(
+        `${mid.padEnd(16)} ${(sign ?? "none").padEnd(11)} ${pct(g.win)} | ${pct(t.win)}     | ${g.avgTurns.toFixed(2)}`,
+      );
+    }
+  }
+  console.log(`(${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+} else if (pvp) {
   const nPvp = argv.includes("--n") ? n : 400;
   const t0 = Date.now();
   const signs = getData().character.signs;
@@ -87,13 +111,13 @@ if (pvp) {
   console.log(`(${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 } else if (!sweep) {
   const signs: (string | undefined)[] = signArg === "all" ? allSigns : signArg === "none" ? [undefined] : [signArg];
-  console.log(`n=${n} seed=${seed} overrides=${JSON.stringify(overrides)}`);
-  console.log("sign        policy       win     lose    draw    avgTurns  avgHpOnWin");
+  console.log(`n=${n} seed=${seed} monster=${monsterId ?? monsterIds[0]} overrides=${JSON.stringify(overrides)}`);
+  console.log("sign       policy       win     lose    draw    avgTurns  avgHpOnWin");
   const t0 = Date.now();
   const winTable: Record<string, Record<string, Summary>> = {};
   for (const sign of signs) {
     for (const p of POLICIES) {
-      const s = runMany(p, n, overrides, seed, sign);
+      const s = runMany(p, n, overrides, seed, sign, monsterId);
       (winTable[sign ?? "none"] ??= {})[p] = s;
       console.log(
         `${(sign ?? "none").padEnd(11)} ${p.padEnd(12)} ${pct(s.win)} ${pct(s.lose)} ${pct(s.draw)}  ${s.avgTurns.toFixed(2).padStart(7)}  ${s.avgHpOnWin.toFixed(1).padStart(9)}`,

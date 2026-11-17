@@ -1,12 +1,15 @@
 /**
  * Mô phỏng cân bằng trận: dựng trận giống hệt match.ts (cùng cột xuất phát, groupSize, hp, bộ súng theo cung,
  * nội lực, maxTurns, độ lệch) từ dữ liệu thật, cho bot người chơi đánh, trả kết quả. Hàm thuần, tất định theo seed.
- * Ghi đè giá trị chỉ áp dụng trong bộ nhớ, không đụng file data/. Bot không di chuyển (như Giai đoạn 1).
+ * Ghi đè giá trị chỉ áp dụng trong bộ nhớ, không đụng file data/. Bot người chơi không di chuyển;
+ * quái có moveRangeTiles > 0 di chuyển mỗi lượt như trong Match (docs/09).
  */
 import {
   applyMoves,
+  chooseMonsterMove,
   chooseMonsterShot,
   createBattleState,
+  monsterMoveRng,
   mulberry32,
   outcome,
   probeShot,
@@ -14,7 +17,7 @@ import {
   validateShot,
   winnerTeam,
 } from "../battle/engine.js";
-import type { BattleConfig, BattleState, GunStats, ShotCommand, SignId, Unit } from "../battle/types.js";
+import type { BattleConfig, BattleState, GunStats, MoveCommand, ShotCommand, SignId, Unit } from "../battle/types.js";
 import { loadGameData, type GameData } from "../data.js";
 
 export type Policy = "gioi" | "ngau_nhien" | "trung_binh";
@@ -291,6 +294,8 @@ export function simulateMatch(opts: SimOptions): SimResult {
       cooldowns: {},
       statuses: [],
       aiErrorTiles: aiError,
+      moveRangeTiles: monsterDef.moveRangeTiles,
+      monsterId: monsterDef.id,
     })),
   ];
   let state: BattleState = createBattleState(map, units);
@@ -332,13 +337,22 @@ export function simulateMatch(opts: SimOptions): SimResult {
 
   let res = outcome(state, maxTurns);
   while (res === null) {
+    const seed = (turnRng() * 4294967296) >>> 0;
+    // pha di chuyển: quái biết đi chọn cột (bot người chơi đứng yên), rồi mới ngắm như Match
+    const moveRng = monsterMoveRng(seed);
+    const moves: MoveCommand[] = [];
+    for (const u of state.units) {
+      if (u.team !== 1 || !u.alive) continue;
+      const c = chooseMonsterMove(state, u.id, guns, cfg, moveRng);
+      if (c) moves.push(c);
+    }
+    if (moves.length > 0) state = applyMoves(state, moves, cfg).state;
     const cmds: ShotCommand[] = [];
     const me = state.units.find((u) => u.id === PLAYER_ID)!;
     if (me.alive) cmds.push(playerShot());
     for (const u of state.units) {
       if (u.team === 1 && u.alive) cmds.push(chooseMonsterShot(state, u.id, guns, cfg));
     }
-    const seed = (turnRng() * 4294967296) >>> 0;
     state = resolveShots(state, cmds, guns, cfg, seed).state;
     res = outcome(state, maxTurns);
   }
@@ -360,14 +374,21 @@ export interface Summary {
   avgHpOnWin: number;
 }
 
-export function runMany(policy: Policy, n: number, overrides: Overrides = {}, baseSeed = 1, sign?: string): Summary {
+export function runMany(
+  policy: Policy,
+  n: number,
+  overrides: Overrides = {},
+  baseSeed = 1,
+  sign?: string,
+  monsterId?: string,
+): Summary {
   let win = 0;
   let lose = 0;
   let draw = 0;
   let turns = 0;
   let hpWin = 0;
   for (let i = 0; i < n; i++) {
-    const r = simulateMatch({ policy, seed: (baseSeed + i * 7919) >>> 0, overrides, sign });
+    const r = simulateMatch({ policy, seed: (baseSeed + i * 7919) >>> 0, overrides, sign, monsterId });
     turns += r.turns;
     if (r.outcome === "win") {
       win++;

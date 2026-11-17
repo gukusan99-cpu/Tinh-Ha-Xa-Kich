@@ -9,7 +9,32 @@
       "expReward": 20,
       "worldSpeedTilesPerSec": 1.5,
       "battleMapId": "dong_am_thach_1",
-      "groupSize": 2
+      "groupSize": 2,
+      "moveRangeTiles": 0
+    },
+    {
+      "id": "am_thach_gai",
+      "ten": "Ám Thạch Gai",
+      "hp": 75,
+      "gunId": "gai_lua",
+      "aiErrorTiles": 7,
+      "expReward": 30,
+      "worldSpeedTilesPerSec": 2,
+      "battleMapId": "hem_van_thach_1",
+      "groupSize": 2,
+      "moveRangeTiles": 3
+    },
+    {
+      "id": "am_thach_lon",
+      "ten": "Ám Thạch Lớn",
+      "hp": 160,
+      "gunId": "da_tang",
+      "aiErrorTiles": 9,
+      "expReward": 60,
+      "worldSpeedTilesPerSec": 1,
+      "battleMapId": "hem_van_thach_1",
+      "groupSize": 1,
+      "moveRangeTiles": 0
     }
   ]
 }

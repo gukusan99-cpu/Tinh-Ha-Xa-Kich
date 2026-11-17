@@ -70,6 +70,7 @@
   "challengeRetrySeconds": 15,
   "pvpMaxTurns": 15,
   "pvpBattleMapId": "dau_truong_1",
+  "portalLockedNoticeSeconds": 3,
   "chuaCoSo": [
     "burnDamagePerTurn",
     "poisonDamagePerTurn",

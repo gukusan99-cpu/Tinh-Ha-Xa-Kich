@@ -18,6 +18,8 @@ export interface Rect {
 export interface Portal extends Rect {
   toMapId: string;
   toSpawn: { x: number; y: number };
+  /** Cấp tối thiểu để qua cổng (docs/09); thiếu = không khóa. */
+  levelRequired?: number;
 }
 export interface MonsterSpawn {
   monsterId: string;
@@ -57,6 +59,8 @@ export interface MonsterDef {
   worldSpeedTilesPerSec: number;
   battleMapId: string;
   groupSize: number;
+  /** Số cột tối đa quái đi mỗi lượt trong trận; 0 = đứng yên (docs/09). */
+  moveRangeTiles: number;
 }
 export interface SignDef {
   id: SignId;
@@ -89,6 +93,7 @@ export interface Settings {
   challengeRetrySeconds: number;
   pvpMaxTurns: number;
   pvpBattleMapId: string;
+  portalLockedNoticeSeconds: number;
 }
 export interface GameData {
   battle: BattleConfig;
@@ -194,11 +199,13 @@ function loadWorldMap(file: string): WorldMapDef {
     spawn: point(o["spawn"], `${w}.spawn`),
     portals: arr(o, "portals", w).map((p, i) => {
       const po = obj(p, `${w}.portals[${i}]`);
-      return {
+      const portal: Portal = {
         ...rect(po, `${w}.portals[${i}]`),
         toMapId: str(po, "toMapId", `${w}.portals[${i}]`),
         toSpawn: point(po["toSpawn"], `${w}.portals[${i}].toSpawn`),
       };
+      if (po["levelRequired"] !== undefined) portal.levelRequired = num(po, "levelRequired", `${w}.portals[${i}]`);
+      return portal;
     }),
     monsterSpawns: arr(o, "monsterSpawns", w).map((s, i) => {
       const so = obj(s, `${w}.monsterSpawns[${i}]`);
@@ -248,6 +255,7 @@ export function loadGameData(): GameData {
     challengeRetrySeconds: num(bal, "challengeRetrySeconds", wb),
     pvpMaxTurns: num(bal, "pvpMaxTurns", wb),
     pvpBattleMapId: str(bal, "pvpBattleMapId", wb),
+    portalLockedNoticeSeconds: num(bal, "portalLockedNoticeSeconds", wb),
   };
 
   const nv = readJson("nhan-vat.json");
@@ -297,6 +305,7 @@ export function loadGameData(): GameData {
       worldSpeedTilesPerSec: num(mo, "worldSpeedTilesPerSec", w),
       battleMapId: str(mo, "battleMapId", w),
       groupSize: num(mo, "groupSize", w),
+      moveRangeTiles: num(mo, "moveRangeTiles", w),
     };
   }
 
@@ -365,7 +374,7 @@ export function validateGameData(d: GameData): void {
   if (!Number.isInteger(s.maxTurnsPerMatch) || s.maxTurnsPerMatch < 1) {
     throw new Error("settings.maxTurnsPerMatch: phải là số nguyên ≥ 1");
   }
-  for (const k of ["challengeTimeoutSeconds", "challengeRetrySeconds"] as const) positive(s[k], `settings.${k}`);
+  for (const k of ["challengeTimeoutSeconds", "challengeRetrySeconds", "portalLockedNoticeSeconds"] as const) positive(s[k], `settings.${k}`);
   if (!Number.isInteger(s.pvpMaxTurns) || s.pvpMaxTurns < 1) throw new Error("settings.pvpMaxTurns: phải là số nguyên ≥ 1");
   const arena = d.battleMaps[s.pvpBattleMapId];
   if (!arena) throw new Error(`settings.pvpBattleMapId: bản đồ trận "${s.pvpBattleMapId}" không có`);
@@ -417,6 +426,9 @@ export function validateGameData(d: GameData): void {
     if (m.groupSize > bm.monsterSpawnCols.length) {
       throw new Error(`${w}: groupSize ${m.groupSize} > số cột xuất phát của quái (${bm.monsterSpawnCols.length}) ở ${bm.id}`);
     }
+    if (!Number.isInteger(m.moveRangeTiles) || m.moveRangeTiles < 0) {
+      throw new Error(`${w}: moveRangeTiles phải là số nguyên ≥ 0`);
+    }
     positive(m.hp, `${w}.hp`);
     positive(m.worldSpeedTilesPerSec, `${w}.worldSpeedTilesPerSec`);
   }
@@ -440,6 +452,9 @@ export function validateGameData(d: GameData): void {
       if (!dest) throw new Error(`${w}: cổng trỏ tới bản đồ "${p.toMapId}" không có`);
       checkFloorPoint(dest, p.toSpawn, `${w}: toSpawn của cổng tới ${dest.id}`);
       if (p.w <= 0 || p.h <= 0) throw new Error(`${w}: cổng có kích thước ≤ 0`);
+      if (p.levelRequired !== undefined && (!Number.isInteger(p.levelRequired) || p.levelRequired < 1)) {
+        throw new Error(`${w}: levelRequired của cổng tới ${dest.id} phải là số nguyên ≥ 1`);
+      }
     }
     if (m.kind === "thanh" && m.monsterSpawns.length > 0) throw new Error(`${w}: thành không có quái`);
     for (const sp of m.monsterSpawns) {

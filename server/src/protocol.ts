@@ -168,6 +168,8 @@ export interface UnitInfo {
   statuses: Status[];
   /** Chỉ người chơi: bộ súng đang mang. */
   guns?: string[];
+  /** Chỉ quái: id loại quái (data/quai.json). */
+  monsterId?: string;
 }
 /** Trạng thái đơn vị gửi kèm mỗi `phase`. */
 export interface UnitPhaseState {
@@ -235,6 +237,8 @@ export interface MatchStartMessage {
   type: "match_start";
   matchId: string;
   mode: "pve" | "pvp";
+  /** Id bản đồ trận đang dùng (data/tran/). */
+  battleMapId: string;
   map: { width: number; height: number; rows: string[] };
   units: UnitInfo[];
   you: number;
@@ -285,6 +289,12 @@ export interface ChallengeReceivedMessage {
   fromLevel: number;
   expiresAt: number;
 }
+/** Cổng khóa cấp (docs/09): người chơi chưa đủ cấp đứng vào cổng. */
+export interface PortalLockedMessage {
+  v: 1;
+  type: "portal_locked";
+  levelRequired: number;
+}
 export type ChallengeCloseReason = "accepted" | "declined" | "expired" | "cancelled" | "unavailable";
 export interface ChallengeClosedMessage {
   v: 1;
@@ -309,7 +319,8 @@ export type ServerMessage =
   | MatchEndMessage
   | ChallengeSentMessage
   | ChallengeReceivedMessage
-  | ChallengeClosedMessage;
+  | ChallengeClosedMessage
+  | PortalLockedMessage;
 
 // ---------- parse ----------
 
