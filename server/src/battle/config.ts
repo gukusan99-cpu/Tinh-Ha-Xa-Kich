@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { BattleConfig, GunStats } from "./types.js";
+import type { BattleConfig, GunStats, SignId } from "./types.js";
 
 const DATA_DIR = fileURLToPath(new URL("../../../data/", import.meta.url));
 
-const CONFIG_KEYS: (keyof Omit<BattleConfig, never>)[] = [
+/** Khóa số lấy từ data/can-bang-v0.json. */
+const CONFIG_KEYS = [
   "gravityTilesPerSec2",
   "maxProjectileSpeedTilesPerSec",
   "simHz",
@@ -20,7 +21,13 @@ const CONFIG_KEYS: (keyof Omit<BattleConfig, never>)[] = [
   "deviationMaxTiles",
   "critChance",
   "critMultiplier",
-];
+  "energyRegenPerTurn",
+  "burnMaxTurns",
+  "stunMaxTurns",
+  "slowMaxTurns",
+] as const;
+
+const SIGN_IDS: readonly string[] = ["bach_duong", "kim_nguu", "xu_nu", "bao_binh"];
 
 function readJson(name: string): Record<string, unknown> {
   const text = readFileSync(DATA_DIR + name, "utf8").replace(/^﻿/, "");
@@ -39,7 +46,17 @@ export function loadBattleConfig(): BattleConfig {
   const raw = readJson("can-bang-v0.json");
   const out: Record<string, number> = {};
   for (const k of CONFIG_KEYS) out[k] = finite(raw, k, "data/can-bang-v0.json");
+  out["energyMax"] = finite(readJson("nhan-vat.json"), "energyMax", "data/nhan-vat.json");
   return out as unknown as BattleConfig;
+}
+
+function obj(v: unknown, w: string): Record<string, unknown> {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) throw new Error(`${w}: phải là object`);
+  return v as Record<string, unknown>;
+}
+
+function optNum(o: Record<string, unknown>, k: string, w: string): number | undefined {
+  return o[k] === undefined ? undefined : finite(o, k, w);
 }
 
 export function loadGuns(): Record<string, GunStats> {
@@ -48,14 +65,59 @@ export function loadGuns(): Record<string, GunStats> {
   if (!Array.isArray(list)) throw new Error('data/sung.json: thiếu mảng "guns"');
   const guns: Record<string, GunStats> = {};
   for (const item of list) {
-    const g = item as Record<string, unknown>;
+    const g = obj(item, "data/sung.json: súng");
     const id = g["id"];
     if (typeof id !== "string" || id === "") throw new Error("data/sung.json: súng thiếu id");
-    guns[id] = {
+    const w = `data/sung.json[${id}]`;
+    const sign = g["sign"];
+    if (sign !== null && (typeof sign !== "string" || !SIGN_IDS.includes(sign))) {
+      throw new Error(`${w}: "sign" phải là null hoặc một cung hợp lệ`);
+    }
+    const kind = g["kind"];
+    if (kind !== "projectile" && kind !== "burst" && kind !== "shower" && kind !== "self") {
+      throw new Error(`${w}: "kind" không hợp lệ`);
+    }
+    const gun: GunStats = {
       id,
-      damage: finite(g, "damage", `data/sung.json[${id}]`),
-      blastRadiusTiles: finite(g, "blastRadiusTiles", `data/sung.json[${id}]`),
+      sign: sign as SignId | null,
+      kind,
+      damage: finite(g, "damage", w),
+      blastRadiusTiles: finite(g, "blastRadiusTiles", w),
+      energyCost: finite(g, "energyCost", w),
+      cooldownTurns: finite(g, "cooldownTurns", w),
     };
+    if (kind === "burst") {
+      gun.count = finite(g, "count", w);
+      const offs = g["powerOffsets"];
+      if (!Array.isArray(offs) || offs.length !== gun.count || offs.some((x) => typeof x !== "number" || !Number.isFinite(x))) {
+        throw new Error(`${w}: "powerOffsets" phải là mảng ${gun.count} số`);
+      }
+      gun.powerOffsets = offs as number[];
+    } else if (kind === "shower") {
+      gun.count = finite(g, "count", w);
+      gun.spreadTiles = finite(g, "spreadTiles", w);
+    } else if (kind === "self") {
+      const se = obj(g["selfEffect"], `${w}.selfEffect`);
+      if (se["type"] === "shield") gun.selfEffect = { type: "shield", amount: finite(se, "amount", `${w}.selfEffect`) };
+      else if (se["type"] === "trueAim") gun.selfEffect = { type: "trueAim", turns: finite(se, "turns", `${w}.selfEffect`) };
+      else throw new Error(`${w}: selfEffect.type không hợp lệ`);
+    }
+    if (g["burn"] !== undefined) {
+      const b = obj(g["burn"], `${w}.burn`);
+      gun.burn = { turns: finite(b, "turns", `${w}.burn`), damagePerTurn: finite(b, "damagePerTurn", `${w}.burn`) };
+    }
+    if (g["slow"] !== undefined) {
+      const s = obj(g["slow"], `${w}.slow`);
+      gun.slow = { turns: finite(s, "turns", `${w}.slow`), tiles: finite(s, "tiles", `${w}.slow`) };
+    }
+    if (g["stun"] !== undefined) {
+      gun.stun = { turns: finite(obj(g["stun"], `${w}.stun`), "turns", `${w}.stun`) };
+    }
+    const kb = optNum(g, "knockbackTiles", w);
+    if (kb !== undefined) gun.knockbackTiles = kb;
+    const cd = optNum(g, "craterDepthTiles", w);
+    if (cd !== undefined) gun.craterDepthTiles = cd;
+    guns[id] = gun;
   }
   return guns;
 }

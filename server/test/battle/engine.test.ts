@@ -16,6 +16,8 @@ const shot = (unitId: number, angle: number, power: number, facing: 1 | -1 = 1):
   angle,
   power,
   facing,
+  gunId: "g",
+  aimElapsedSeconds: 0,
 });
 
 describe("config", () => {

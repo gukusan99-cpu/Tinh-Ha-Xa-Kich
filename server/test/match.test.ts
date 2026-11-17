@@ -13,7 +13,7 @@ interface Harness {
   of(type: string): any[];
 }
 
-function harness(tweak: (d: GameData) => void = () => {}): Harness {
+function harness(tweak: (d: GameData) => void = () => {}, sign = "xu_nu", turnSeed = 12345): Harness {
   const data = testData();
   tweak(data);
   const clock = new ManualClock();
@@ -24,10 +24,11 @@ function harness(tweak: (d: GameData) => void = () => {}): Harness {
     id: "m1",
     data,
     clock,
-    seed: () => 12345,
+    seed: () => turnSeed,
     player: {
       name: "Bob",
-      gunId: data.character.startingGunId,
+      sign,
+      gunId: data.character.commonGunIds[0]!,
       send: (m: ServerMessage) => void sent.push(m),
       isConnected: () => state.connected,
     },
@@ -67,7 +68,12 @@ describe("Match: khởi động", () => {
     expect(ms.map((u) => u.col)).toEqual([42, 48]);
     const mHp = h.data.monsters["am_thach_nho"]!.hp;
     for (const u of ms) expect(u).toMatchObject({ team: 1, hp: mHp, maxHp: mHp, facing: -1 });
-    expect(Object.keys(me).sort()).toEqual(["col", "facing", "hp", "id", "kind", "maxHp", "name", "team", "y"]);
+    expect(Object.keys(me).sort()).toEqual([
+      "col", "cooldowns", "energy", "facing", "guns", "hp", "id", "kind", "maxHp", "name", "statuses", "team", "y",
+    ]);
+    expect(me).toMatchObject({ energy: h.data.character.energyStart, cooldowns: {}, statuses: [] });
+    expect(me.guns).toEqual([...h.data.character.signDefs["xu_nu"]!.gunIds, ...h.data.character.commonGunIds]);
+    for (const m of ms) expect(m.guns).toBeUndefined();
     const ph = h.of("phase")[0];
     expect(ph).toMatchObject({ turn: 1, phase: "move" });
     expect(ph.deadline - ph.serverTime).toBe(h.data.settings.movePhaseSeconds * 1000);
@@ -78,12 +84,12 @@ describe("Match: lệnh đúng/sai pha", () => {
   it("battle_shot ngoài pha aim -> not_allowed; battle_move ngoài pha move -> not_allowed", () => {
     const h = harness();
     h.match.start();
-    expect(h.match.handleShot(45, 50, 1)).toBe("not_allowed");
+    expect(h.match.handleShot(45, 50, 1, "thuoc_no_nho")).toBe("not_allowed");
     expect(h.match.handleMove(8)).toBe("ok");
     // vì chỉ có một người chơi và đã gửi, pha move kết thúc sớm
     expect(h.of("moves_result")).toHaveLength(1);
     expect(h.match.handleMove(9)).toBe("not_allowed");
-    expect(h.match.handleShot(45, 50, 1)).toBe("ok");
+    expect(h.match.handleShot(45, 50, 1, "thuoc_no_nho")).toBe("ok");
   });
 
   it("pha move kết thúc sớm khi người chơi gửi lệnh, moves_result có đường đi", () => {
@@ -111,7 +117,7 @@ describe("Match: lệnh đúng/sai pha", () => {
     const h = harness();
     h.match.start();
     h.match.handleMove(6);
-    expect(h.match.handleShot(500, 50, 1)).toBe("ok"); // 500 độ bị kẹp về 80
+    expect(h.match.handleShot(500, 50, 1, "thuoc_no_nho")).toBe("ok"); // 500 độ bị kẹp về 80
     const tr = h.of("turn_result")[0];
     expect(tr).toMatchObject({ v: 1, type: "turn_result", turn: 1 });
     for (const k of ["shots", "explosions", "damage", "falls", "deaths"]) expect(Array.isArray(tr[k])).toBe(true);
@@ -154,7 +160,7 @@ describe("Match: hạn chót và kick", () => {
     h.match.start();
     for (let t = 0; t < 5; t++) {
       expect(h.match.handleMove(6)).toBe("ok");
-      expect(h.match.handleShot(45, 50, 1)).toBe("ok");
+      expect(h.match.handleShot(45, 50, 1, "thuoc_no_nho")).toBe("ok");
       for (let i = 0; i < 40; i++) {
         h.clock.advance(1000);
         await flush();
@@ -178,7 +184,7 @@ describe("Match: kết thúc", () => {
     });
     h.match.start();
     h.match.handleMove(6);
-    h.match.handleShot(45, 28, 1);
+    h.match.handleShot(45, 28, 1, "thuoc_no_nho");
     await runUntilDone(h, 500);
     const exp = 2 * h.data.monsters["am_thach_nho"]!.expReward;
     expect(h.state.settled).toEqual([["win", exp]]);
@@ -198,7 +204,7 @@ describe("Match: kết thúc", () => {
     });
     h.match.start();
     h.match.handleMove(6);
-    h.match.handleShot(45, 28, 1);
+    h.match.handleShot(45, 28, 1, "thuoc_no_nho");
     expect(h.of("match_end")).toHaveLength(0);
     await runUntilDone(h, 500);
     const types = h.sent.map((m) => m.type);
@@ -219,5 +225,140 @@ describe("Match: kết thúc", () => {
     h.match.start();
     h.match.abort();
     expect(h.clock.pending()).toBe(0);
+  });
+});
+
+const nearMonsters = (d: GameData): void => {
+  d.battleMaps["dong_am_thach_1"]!.monsterSpawnCols = [10, 12];
+  d.battle.deviationMaxTiles = 0;
+  d.battle.critChance = 0;
+  d.character.baseHp = 100000;
+};
+
+/** Chạy tới pha move của lượt `turn` (đã gửi phase). */
+async function toMovePhase(h: Harness, turn: number): Promise<void> {
+  for (let i = 0; i < 200 && !h.of("phase").some((p) => p.phase === "move" && p.turn === turn); i++) {
+    h.clock.advance(500);
+    await flush();
+  }
+}
+
+describe("Match: Giai đoạn 2 (súng, nội lực, nội tại)", () => {
+  it("phase gửi kèm trạng thái đơn vị: nội lực, hồi chiêu, trạng thái, súng (chỉ người chơi)", () => {
+    const h = harness(undefined, "kim_nguu");
+    h.match.start();
+    const ph = h.of("phase")[0];
+    expect(ph.units).toHaveLength(3);
+    const me = ph.units.find((u: any) => u.id === 1);
+    expect(me).toMatchObject({ hp: h.data.character.baseHp, energy: h.data.character.energyStart, cooldowns: {}, statuses: [] });
+    expect(me.guns).toEqual(["sung_tieu_lien", "khien_dan", "sung_nang", "thuoc_no_nho"]);
+    expect(ph.units.filter((u: any) => u.id !== 1).every((u: any) => u.guns === undefined && u.energy === 0)).toBe(true);
+  });
+
+  it("battle_shot với súng ngoài bộ, không tồn tại, thiếu nội lực -> not_allowed", () => {
+    const h = harness((d) => (d.character.energyStart = 1), "xu_nu");
+    h.match.start();
+    h.match.handleMove(6);
+    expect(h.match.handleShot(45, 50, 1, "phao_dan_no")).toBe("not_allowed"); // súng của cung khác
+    expect(h.match.handleShot(45, 50, 1, "khong_co")).toBe("not_allowed");
+    expect(h.match.handleShot(45, 50, 1, "dan_lanh")).toBe("not_allowed"); // cần 2 nội lực, có 1
+    expect(h.of("turn_result")).toHaveLength(0);
+    expect(h.match.handleShot(45, 50, 1, "sung_bang")).toBe("ok");
+  });
+
+  it("nội lực và hồi chiêu cập nhật trong turn_result và phase kế tiếp", async () => {
+    const h = harness(nearMonsters, "kim_nguu");
+    h.match.start();
+    h.match.handleMove(6);
+    expect(h.match.handleShot(45, 28, 1, "sung_nang")).toBe("ok"); // cost 2, cooldown 1
+    const tr = h.of("turn_result")[0];
+    const regen = h.data.battle.energyRegenPerTurn;
+    expect(tr.units.find((u: any) => u.id === 1)).toMatchObject({
+      energy: h.data.character.energyStart - 2 + regen,
+      cooldowns: { sung_nang: 1 },
+    });
+    expect(tr.shots[0]).toMatchObject({ gunId: "sung_nang", parentIndex: null });
+    for (const k of ["selfEffects", "shieldAbsorbed", "statusEvents", "knockbacks", "burnTicks"]) expect(Array.isArray(tr[k])).toBe(true);
+    await toMovePhase(h, 2);
+    const ph = h.of("phase").find((p) => p.turn === 2 && p.phase === "move");
+    expect(ph.units.find((u: any) => u.id === 1)).toMatchObject({ cooldowns: { sung_nang: 1 } });
+    h.match.handleMove(6);
+    expect(h.match.handleShot(45, 28, 1, "sung_nang")).toBe("not_allowed"); // còn hồi chiêu
+    expect(h.match.handleShot(45, 28, 1, "thuoc_no_nho")).toBe("ok");
+  });
+
+  it("aimElapsedSeconds tính từ đầu pha ngắm theo giờ máy chủ: Bạch Dương bắn sớm mạnh hơn", async () => {
+    const dmg = async (waitMs: number): Promise<number> => {
+      const h = harness(nearMonsters, "bach_duong");
+      h.match.start();
+      h.match.handleMove(6);
+      h.clock.advance(waitMs);
+      h.match.handleShot(45, 28, 1, "phao_dan_no"); // 40 sát thương, đúng cung
+      await flush();
+      const tr = h.of("turn_result")[0];
+      return Math.max(...tr.damage.filter((d: any) => d.sourceUnitId === 1).map((d: any) => d.amount));
+    };
+    const early = await dmg(5_000);
+    const late = await dmg(12_000);
+    expect(early).toBe(Math.round(40 * 1.25));
+    expect(late).toBe(40);
+  });
+
+  it("aim_preview: chỉ khi có Ngắm chuẩn, giới hạn mỗi giây, bỏ qua lặng lẽ phần vượt", async () => {
+    const h = harness(
+      (d) => {
+        nearMonsters(d);
+        d.battleMaps["dong_am_thach_1"]!.monsterSpawnCols = [40, 45];
+      },
+      "xu_nu",
+    );
+    h.match.start();
+    expect(h.match.handlePreview(45, 50, 1, "sung_bang")).toBe("not_allowed"); // sai pha
+    h.match.handleMove(6);
+    expect(h.match.handlePreview(45, 50, 1, "sung_bang")).toBe("not_allowed"); // chưa có Ngắm chuẩn
+    expect(h.match.handleShot(45, 50, 1, "sung_kinh")).toBe("ok"); // self: áp Ngắm chuẩn cho lượt sau
+    await toMovePhase(h, 2);
+    h.match.handleMove(6);
+    expect(h.of("phase").at(-1)).toMatchObject({ turn: 2, phase: "aim" });
+    expect(h.of("phase").at(-1).units.find((u: any) => u.id === 1).statuses).toEqual([{ type: "trueAim", turns: 1 }]);
+
+    expect(h.match.handlePreview(45, 50, 1, "sung_kinh")).toBe("not_allowed"); // súng self
+    expect(h.match.handlePreview(45, 50, 1, "phao_dan_no")).toBe("not_allowed"); // ngoài bộ
+    const limit = h.data.character.signDefs["xu_nu"]!.passive.type === "precision" ? (h.data.character.signDefs["xu_nu"]!.passive as any).aimPreviewPerSecond : 0;
+    const results = Array.from({ length: limit + 3 }, () => h.match.handlePreview(45, 50, 1, "sung_bang"));
+    expect(results.filter((r) => r === "ok")).toHaveLength(limit);
+    expect(results.filter((r) => r === "dropped")).toHaveLength(3);
+    const prev = h.of("aim_preview");
+    expect(prev).toHaveLength(limit);
+    expect(prev[0]).toMatchObject({ v: 1, type: "aim_preview" });
+    expect(prev[0].points.length).toBeGreaterThan(2);
+    // sang giây mới thì lại được
+    h.clock.advance(1000);
+    expect(h.match.handlePreview(45, 50, 1, "sung_bang")).toBe("ok");
+  });
+
+  it("phát bắn sau Ngắm chuẩn không lệch (bất kể seed)", async () => {
+    const impacts: number[] = [];
+    for (const seed of [1, 2, 3]) {
+      const h = harness(
+        (d) => {
+          nearMonsters(d);
+          d.battle.deviationMaxTiles = 3;
+          d.monsters["am_thach_nho"]!.aiErrorTiles = 0; // địa hình sau lượt 1 giống nhau ở mọi seed
+          d.battleMaps["dong_am_thach_1"]!.monsterSpawnCols = [40, 45];
+        },
+        "xu_nu",
+        seed,
+      );
+      h.match.start();
+      h.match.handleMove(6);
+      h.match.handleShot(45, 50, 1, "sung_kinh");
+      await toMovePhase(h, 2);
+      h.match.handleMove(6);
+      h.match.handleShot(45, 50, 1, "sung_bang");
+      const tr = h.of("turn_result")[1];
+      impacts.push(tr.shots.find((s: any) => s.unitId === 1).impact.x);
+    }
+    expect(new Set(impacts).size).toBe(1);
   });
 });

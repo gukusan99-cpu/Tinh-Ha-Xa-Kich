@@ -1,5 +1,5 @@
 /** Giao thức Giai đoạn 0 + 1 (xem docs/06-kien-truc.md). */
-import type { TurnResult } from "./battle/types.js";
+import type { Status, TurnResult } from "./battle/types.js";
 
 export const PROTOCOL_VERSION = 1;
 export const MAX_MESSAGE_BYTES = 4096;
@@ -10,6 +10,7 @@ const MAX_RAW_STRING = 256;
 /** Góc cực đoan bị từ chối ở tầng giao thức; góc hợp lý được máy chủ kẹp theo dữ liệu. */
 const MAX_ABS_ANGLE = 360;
 const MAX_ABS_COORD = 1e6;
+const MAX_GUN_ID_LENGTH = 64;
 
 export type ErrorCode =
   | "bad_json"
@@ -88,6 +89,15 @@ export interface BattleShotMessage {
   angle: number;
   power: number;
   facing: -1 | 1;
+  gunId: string;
+}
+export interface AimPreviewMessage {
+  v: 1;
+  type: "aim_preview";
+  gunId: string;
+  angle: number;
+  power: number;
+  facing: -1 | 1;
 }
 export type ClientMessage =
   | HelloMessage
@@ -98,7 +108,8 @@ export type ClientMessage =
   | EnterWorldMessage
   | MoveToMessage
   | BattleMoveMessage
-  | BattleShotMessage;
+  | BattleShotMessage
+  | AimPreviewMessage;
 
 // ---------- S→C ----------
 
@@ -127,6 +138,20 @@ export interface UnitInfo {
   hp: number;
   maxHp: number;
   facing: -1 | 1;
+  energy: number;
+  cooldowns: Record<string, number>;
+  statuses: Status[];
+  /** Chỉ người chơi: bộ súng đang mang. */
+  guns?: string[];
+}
+/** Trạng thái đơn vị gửi kèm mỗi `phase`. */
+export interface UnitPhaseState {
+  id: number;
+  hp: number;
+  energy: number;
+  cooldowns: Record<string, number>;
+  statuses: Status[];
+  guns?: string[];
 }
 
 export interface WelcomeMessage {
@@ -196,6 +221,12 @@ export interface PhaseMessage {
   phase: "move" | "aim";
   deadline: number;
   serverTime: number;
+  units: UnitPhaseState[];
+}
+export interface AimPreviewResultMessage {
+  v: 1;
+  type: "aim_preview";
+  points: [number, number][];
 }
 export interface MovesResultMessage {
   v: 1;
@@ -224,6 +255,7 @@ export type ServerMessage =
   | MatchStartMessage
   | PhaseMessage
   | MovesResultMessage
+  | AimPreviewResultMessage
   | TurnResultMessage
   | MatchEndMessage;
 
@@ -290,12 +322,14 @@ export function parseClientMessage(raw: string | Buffer): ParseResult {
       if (typeof col !== "number" || !Number.isSafeInteger(col)) return bad();
       return { ok: true, message: { v: 1, type: "battle_move", col } };
     }
-    case "battle_shot": {
-      const { angle, power, facing } = obj;
+    case "battle_shot":
+    case "aim_preview": {
+      const { angle, power, facing, gunId } = obj;
       if (!isNum(angle) || Math.abs(angle) > MAX_ABS_ANGLE) return bad();
       if (!isNum(power) || power < 0 || power > 100) return bad();
       if (facing !== 1 && facing !== -1) return bad();
-      return { ok: true, message: { v: 1, type: "battle_shot", angle, power, facing } };
+      if (typeof gunId !== "string" || gunId === "" || gunId.length > MAX_GUN_ID_LENGTH) return bad();
+      return { ok: true, message: { v: 1, type: obj.type, gunId, angle, power, facing } };
     }
     default:
       return fail("unknown_type");

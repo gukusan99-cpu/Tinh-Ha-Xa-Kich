@@ -93,7 +93,7 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
   const data: GameData = { ...base, settings: { ...base.settings, ...opts.timing } };
   const accounts = new AccountService(opts.store ?? new MemoryAccountStore(), {
     signs: data.character.signs,
-    startingGunId: data.character.startingGunId,
+    startingGunId: data.character.commonGunIds[0]!,
     expPerLevel: data.character.expPerLevel,
   });
 
@@ -133,6 +133,7 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
       seed: opts.seed,
       player: {
         name: s.character.name,
+        sign: s.character.sign,
         gunId: s.character.gunId,
         send: (m) => send(s.ws, m),
         isConnected: () => !s.closed && s.ws.readyState === s.ws.OPEN,
@@ -242,8 +243,13 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
         return;
       }
       case "battle_shot": {
-        if (!s.match || s.match.handleShot(msg.angle, msg.power, msg.facing) !== "ok") return fail("not_allowed");
+        if (!s.match || s.match.handleShot(msg.angle, msg.power, msg.facing, msg.gunId) !== "ok") return fail("not_allowed");
         return;
+      }
+      case "aim_preview": {
+        const r = s.match?.handlePreview(msg.angle, msg.power, msg.facing, msg.gunId);
+        if (r === undefined || r === "not_allowed") return fail("not_allowed");
+        return; // "dropped": bỏ qua lặng lẽ
       }
     }
   }

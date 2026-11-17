@@ -1,13 +1,43 @@
 {
   "guns": [
-    {
-      "id": "thuoc_no_nho",
-      "ten": "Súng thuốc nổ nhỏ",
-      "tang": "thuong",
-      "damage": 35,
-      "blastRadiusTiles": 2,
-      "energyCost": 0,
-      "cooldownTurns": 0
-    }
+    { "id": "thuoc_no_nho", "ten": "Súng thuốc nổ nhỏ", "tang": "thuong", "sign": null, "kind": "projectile",
+      "damage": 35, "blastRadiusTiles": 2, "energyCost": 0, "cooldownTurns": 0 },
+
+    { "id": "phao_dan_no", "ten": "Pháo đạn nổ", "tang": "cung", "sign": "bach_duong", "kind": "projectile",
+      "damage": 40, "blastRadiusTiles": 2.5, "energyCost": 0, "cooldownTurns": 0 },
+    { "id": "sung_nung_do", "ten": "Súng nung đỏ", "tang": "cung", "sign": "bach_duong", "kind": "projectile",
+      "damage": 28, "blastRadiusTiles": 1.5, "energyCost": 2, "cooldownTurns": 0,
+      "burn": { "turns": 2, "damagePerTurn": 8 } },
+    { "id": "dan_xung_kich", "ten": "Đạn xung kích", "tang": "cung", "sign": "bach_duong", "kind": "projectile",
+      "damage": 20, "blastRadiusTiles": 1.5, "energyCost": 3, "cooldownTurns": 1,
+      "knockbackTiles": 1 },
+
+    { "id": "sung_tieu_lien", "ten": "Súng tiểu liên", "tang": "cung", "sign": "kim_nguu", "kind": "burst",
+      "damage": 14, "blastRadiusTiles": 1, "energyCost": 0, "cooldownTurns": 0,
+      "count": 3, "powerOffsets": [-4, 0, 4] },
+    { "id": "khien_dan", "ten": "Khiên đạn", "tang": "cung", "sign": "kim_nguu", "kind": "self",
+      "damage": 0, "blastRadiusTiles": 0, "energyCost": 3, "cooldownTurns": 2,
+      "selfEffect": { "type": "shield", "amount": 40 } },
+    { "id": "sung_nang", "ten": "Súng nặng", "tang": "cung", "sign": "kim_nguu", "kind": "projectile",
+      "damage": 60, "blastRadiusTiles": 2, "energyCost": 2, "cooldownTurns": 1 },
+
+    { "id": "sung_bang", "ten": "Súng băng", "tang": "cung", "sign": "xu_nu", "kind": "projectile",
+      "damage": 30, "blastRadiusTiles": 1.5, "energyCost": 0, "cooldownTurns": 0,
+      "slow": { "turns": 1, "tiles": 2 } },
+    { "id": "dan_lanh", "ten": "Đạn lạnh", "tang": "cung", "sign": "xu_nu", "kind": "projectile",
+      "damage": 18, "blastRadiusTiles": 2.5, "energyCost": 2, "cooldownTurns": 0,
+      "slow": { "turns": 1, "tiles": 4 } },
+    { "id": "sung_kinh", "ten": "Súng kính", "tang": "cung", "sign": "xu_nu", "kind": "self",
+      "damage": 0, "blastRadiusTiles": 0, "energyCost": 2, "cooldownTurns": 2,
+      "selfEffect": { "type": "trueAim", "turns": 1 } },
+
+    { "id": "phao_sao_bang", "ten": "Pháo sao băng", "tang": "cung", "sign": "bao_binh", "kind": "shower",
+      "damage": 10, "blastRadiusTiles": 1, "energyCost": 3, "cooldownTurns": 1,
+      "count": 4, "spreadTiles": 3 },
+    { "id": "dan_sao", "ten": "Đạn sao", "tang": "cung", "sign": "bao_binh", "kind": "projectile",
+      "damage": 22, "blastRadiusTiles": 1, "energyCost": 0, "cooldownTurns": 0 },
+    { "id": "thien_thach", "ten": "Thiên thạch", "tang": "hiem", "sign": "bao_binh", "kind": "projectile",
+      "damage": 50, "blastRadiusTiles": 2, "energyCost": 5, "cooldownTurns": 2,
+      "craterDepthTiles": 2, "burn": { "turns": 2, "damagePerTurn": 8 }, "stun": { "turns": 1 } }
   ]
 }

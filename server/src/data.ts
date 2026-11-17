@@ -5,7 +5,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadBattleConfig, loadGuns } from "./battle/config.js";
-import type { BattleConfig, GunStats } from "./battle/types.js";
+import type { BattleConfig, GunStats, Passive, SignId } from "./battle/types.js";
 
 const DATA_DIR = fileURLToPath(new URL("../../data/", import.meta.url));
 
@@ -55,12 +55,23 @@ export interface MonsterDef {
   battleMapId: string;
   groupSize: number;
 }
+export interface SignDef {
+  id: SignId;
+  name: string;
+  gunIds: string[];
+  passive: Passive;
+}
 export interface CharacterRules {
   baseHp: number;
   worldSpeedTilesPerSec: number;
-  startingGunId: string;
+  /** Súng chung, ai cũng mang; phần tử đầu là `Character.gunId` khi tạo nhân vật. */
+  commonGunIds: string[];
   expPerLevel: number;
+  energyStart: number;
+  energyMax: number;
+  /** Danh sách id cung, theo thứ tự trong dữ liệu. */
   signs: string[];
+  signDefs: Record<string, SignDef>;
 }
 export interface Settings {
   movePhaseSeconds: number;
@@ -125,6 +136,38 @@ const intList = (o: Obj, k: string, w: string): number[] =>
     if (typeof v !== "number" || !Number.isInteger(v)) throw new Error(`${w}: "${k}" phải là số nguyên`);
     return v;
   });
+
+function parsePassive(o: Obj, w: string): Passive {
+  const type = str(o, "type", w);
+  switch (type) {
+    case "earlyShot":
+      return {
+        type,
+        earlyShotSeconds: num(o, "earlyShotSeconds", w),
+        earlyShotDamageBonus: num(o, "earlyShotDamageBonus", w),
+        lineBonus: num(o, "lineBonus", w),
+      };
+    case "toughness":
+      return { type, damageTakenReduction: num(o, "damageTakenReduction", w), lineBonus: num(o, "lineBonus", w) };
+    case "precision":
+      return {
+        type,
+        deviationReduction: num(o, "deviationReduction", w),
+        lineBonus: num(o, "lineBonus", w),
+        aimPreviewFraction: num(o, "aimPreviewFraction", w),
+        aimPreviewPerSecond: num(o, "aimPreviewPerSecond", w),
+      };
+    case "meteorPush":
+      return {
+        type,
+        digBelowOnHit: num(o, "digBelowOnHit", w),
+        lineBonusStones: num(o, "lineBonusStones", w),
+        lineBonus: num(o, "lineBonus", w),
+      };
+    default:
+      throw new Error(`${w}: loại nội tại không hợp lệ "${type}"`);
+  }
+}
 
 function loadWorldMap(file: string): WorldMapDef {
   const w = `data/ban-do/${file}`;
@@ -194,12 +237,33 @@ export function loadGameData(): GameData {
 
   const nv = readJson("nhan-vat.json");
   const wn = "data/nhan-vat.json";
+  const signDefs: Record<string, SignDef> = {};
+  for (const [i, s] of arr(nv, "signs", wn).entries()) {
+    const so = obj(s, `${wn}.signs[${i}]`);
+    const id = str(so, "id", `${wn}.signs[${i}]`);
+    const w = `${wn}[${id}]`;
+    signDefs[id] = {
+      id: id as SignId,
+      name: str(so, "ten", w),
+      gunIds: arr(so, "gunIds", w).map((g) => {
+        if (typeof g !== "string" || g === "") throw new Error(`${w}: gunIds phải là chuỗi`);
+        return g;
+      }),
+      passive: parsePassive(obj(so["passive"], `${w}.passive`), `${w}.passive`),
+    };
+  }
   const character: CharacterRules = {
     baseHp: num(nv, "baseHp", wn),
     worldSpeedTilesPerSec: num(nv, "worldSpeedTilesPerSec", wn),
-    startingGunId: str(nv, "startingGunId", wn),
+    commonGunIds: arr(nv, "commonGunIds", wn).map((g) => {
+      if (typeof g !== "string" || g === "") throw new Error(`${wn}: commonGunIds phải là chuỗi`);
+      return g;
+    }),
     expPerLevel: num(nv, "expPerLevel", wn),
-    signs: arr(nv, "signs", wn).map((s, i) => str(obj(s, `${wn}.signs[${i}]`), "id", `${wn}.signs[${i}]`)),
+    energyStart: num(nv, "energyStart", wn),
+    energyMax: num(nv, "energyMax", wn),
+    signs: Object.keys(signDefs),
+    signDefs,
   };
 
   const monsters: Record<string, MonsterDef> = {};
@@ -293,7 +357,34 @@ export function validateGameData(d: GameData): void {
   positive(d.character.worldSpeedTilesPerSec, "character.worldSpeedTilesPerSec");
   positive(d.character.expPerLevel, "character.expPerLevel");
   if (d.character.signs.length === 0) throw new Error("character.signs: rỗng");
-  if (!d.guns[d.character.startingGunId]) throw new Error(`súng khởi đầu "${d.character.startingGunId}" không có trong sung.json`);
+  if (d.character.commonGunIds.length === 0) throw new Error("character.commonGunIds: rỗng");
+  for (const id of d.character.commonGunIds) {
+    const g = d.guns[id];
+    if (!g) throw new Error(`súng chung "${id}" không có trong sung.json`);
+    if (g.sign !== null) throw new Error(`súng chung "${id}" phải có sign null`);
+  }
+  if (d.character.energyMax < d.character.energyStart || d.character.energyStart < 0) {
+    throw new Error("character: energyStart phải nằm trong [0, energyMax]");
+  }
+  for (const sign of d.character.signs) {
+    const sd = d.character.signDefs[sign]!;
+    if (sd.gunIds.length === 0) throw new Error(`cung ${sign}: gunIds rỗng`);
+    for (const id of sd.gunIds) {
+      const g = d.guns[id];
+      if (!g) throw new Error(`cung ${sign}: súng "${id}" không có trong sung.json`);
+      if (g.sign !== sign) throw new Error(`cung ${sign}: súng "${id}" thuộc cung "${g.sign}"`);
+    }
+  }
+  for (const g of Object.values(d.guns)) {
+    const w = `súng ${g.id}`;
+    if (g.kind === "burst" && (!g.count || !g.powerOffsets || g.powerOffsets.length !== g.count)) {
+      throw new Error(`${w}: burst cần count và powerOffsets cùng độ dài`);
+    }
+    if (g.kind === "shower" && (!g.count || g.spreadTiles === undefined)) {
+      throw new Error(`${w}: shower cần count và spreadTiles`);
+    }
+    if (g.kind === "self" && !g.selfEffect) throw new Error(`${w}: self cần selfEffect`);
+  }
 
   for (const m of Object.values(d.monsters)) {
     const w = `quái ${m.id}`;

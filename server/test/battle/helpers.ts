@@ -17,10 +17,15 @@ export const CFG: BattleConfig = {
   deviationMaxTiles: 0,
   critChance: 0,
   critMultiplier: 1.5,
+  energyRegenPerTurn: 2,
+  energyMax: 10,
+  burnMaxTurns: 2,
+  stunMaxTurns: 1,
+  slowMaxTurns: 1,
 };
 
 export const GUNS: Record<string, GunStats> = {
-  g: { id: "g", damage: 35, blastRadiusTiles: 2 },
+  g: { id: "g", sign: null, kind: "projectile", damage: 35, blastRadiusTiles: 2, energyCost: 0, cooldownTurns: 0 },
 };
 
 export function flatMap(width = 60, height = 30, groundTop = 20): { width: number; height: number; rows: string[] } {
@@ -40,6 +45,12 @@ export function unit(id: number, col: number, team: 0 | 1, extra: Partial<Unit> 
     maxHp: 100,
     facing: team === 0 ? 1 : -1,
     gunId: "g",
+    guns: ["g"],
+    sign: null,
+    passive: null,
+    energy: 0,
+    cooldowns: {},
+    statuses: [],
     ...extra,
   };
 }

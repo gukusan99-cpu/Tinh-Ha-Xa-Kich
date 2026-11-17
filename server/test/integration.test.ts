@@ -153,9 +153,9 @@ describe("tích hợp: toàn bộ luồng Giai đoạn 1", () => {
     expect(afterTicks.length).toBe(0);
 
     // lệnh sai thời điểm / sai dữ liệu
-    c2.send({ type: "battle_shot", angle: 45, power: 50, facing: 1 });
+    c2.send({ type: "battle_shot", angle: 45, power: 50, facing: 1, gunId: "thuoc_no_nho" });
     expect(await c2.waitFor("error")).toMatchObject({ code: "not_allowed" });
-    c2.send({ type: "battle_shot", angle: 45, power: 500, facing: 1 });
+    c2.send({ type: "battle_shot", angle: 45, power: 500, facing: 1, gunId: "thuoc_no_nho" });
     expect(await c2.waitFor("error")).toMatchObject({ code: "bad_message" });
 
     // 7. đi, bắn
@@ -165,7 +165,7 @@ describe("tích hợp: toàn bộ luồng Giai đoạn 1", () => {
     expect(await c2.waitFor("phase")).toMatchObject({ turn: 1, phase: "aim" });
     c2.send({ type: "battle_move", col: 9 });
     expect(await c2.waitFor("error")).toMatchObject({ code: "not_allowed" });
-    c2.send({ type: "battle_shot", angle: 45, power: 28, facing: 1 });
+    c2.send({ type: "battle_shot", angle: 45, power: 28, facing: 1, gunId: "dan_sao" }); // súng của Bảo Bình
     const tr = await c2.waitFor("turn_result");
     expect(tr.turn).toBe(1);
     expect(tr.shots).toHaveLength(3);
@@ -196,7 +196,8 @@ describe("tích hợp: toàn bộ luồng Giai đoạn 1", () => {
       { type: "move_to", x: 1, y: 1 },
       { type: "create_character", name: "Abc", sign: "xu_nu" },
       { type: "battle_move", col: 1 },
-      { type: "battle_shot", angle: 1, power: 1, facing: 1 },
+      { type: "battle_shot", angle: 1, power: 1, facing: 1, gunId: "thuoc_no_nho" },
+      { type: "aim_preview", angle: 1, power: 1, facing: 1, gunId: "sung_kinh" },
     ]) {
       c.send(m);
       expect(await c.waitFor("error")).toMatchObject({ code: "not_allowed" });

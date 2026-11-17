@@ -95,20 +95,34 @@ describe("parse battle_move / battle_shot", () => {
     bad({ type: "battle_move" });
     expect(parseClientMessage('{"v":1,"type":"battle_move","col":1e400}').ok).toBe(false);
   });
-  it("battle_shot: angle hữu hạn, power 0..100, facing ±1", () => {
-    const ok = parseClientMessage(msg({ type: "battle_shot", angle: 45.5, power: 100, facing: -1 }));
-    expect(ok).toEqual({ ok: true, message: { v: 1, type: "battle_shot", angle: 45.5, power: 100, facing: -1 } });
-    expect(parseClientMessage(msg({ type: "battle_shot", angle: -30, power: 0, facing: 1 })).ok).toBe(true);
-    bad({ type: "battle_shot", angle: 45, power: 101, facing: 1 });
-    bad({ type: "battle_shot", angle: 45, power: -1, facing: 1 });
-    bad({ type: "battle_shot", angle: 45, power: 50, facing: 0 });
-    bad({ type: "battle_shot", angle: 45, power: 50, facing: 2 });
-    bad({ type: "battle_shot", angle: "45", power: 50, facing: 1 });
-    bad({ type: "battle_shot", power: 50, facing: 1 });
-    expect(parseClientMessage('{"v":1,"type":"battle_shot","angle":1e400,"power":5,"facing":1}').ok).toBe(false);
+  it("battle_shot: angle hữu hạn, power 0..100, facing ±1, gunId chuỗi", () => {
+    const g = "thuoc_no_nho";
+    const ok = parseClientMessage(msg({ type: "battle_shot", angle: 45.5, power: 100, facing: -1, gunId: g }));
+    expect(ok).toEqual({ ok: true, message: { v: 1, type: "battle_shot", gunId: g, angle: 45.5, power: 100, facing: -1 } });
+    expect(parseClientMessage(msg({ type: "battle_shot", angle: -30, power: 0, facing: 1, gunId: g })).ok).toBe(true);
+    bad({ type: "battle_shot", angle: 45, power: 101, facing: 1, gunId: g });
+    bad({ type: "battle_shot", angle: 45, power: -1, facing: 1, gunId: g });
+    bad({ type: "battle_shot", angle: 45, power: 50, facing: 0, gunId: g });
+    bad({ type: "battle_shot", angle: 45, power: 50, facing: 2, gunId: g });
+    bad({ type: "battle_shot", angle: "45", power: 50, facing: 1, gunId: g });
+    bad({ type: "battle_shot", power: 50, facing: 1, gunId: g });
+    expect(parseClientMessage(`{"v":1,"type":"battle_shot","angle":1e400,"power":5,"facing":1,"gunId":"${g}"}`).ok).toBe(false);
+  });
+  it("battle_shot thiếu hoặc sai gunId -> bad_message", () => {
+    bad({ type: "battle_shot", angle: 45, power: 50, facing: 1 });
+    bad({ type: "battle_shot", angle: 45, power: 50, facing: 1, gunId: "" });
+    bad({ type: "battle_shot", angle: 45, power: 50, facing: 1, gunId: 7 });
+    bad({ type: "battle_shot", angle: 45, power: 50, facing: 1, gunId: "x".repeat(65) });
+  });
+  it("aim_preview: cùng luật trường với battle_shot", () => {
+    const ok = parseClientMessage(msg({ type: "aim_preview", gunId: "sung_bang", angle: 30, power: 60, facing: 1 }));
+    expect(ok).toEqual({ ok: true, message: { v: 1, type: "aim_preview", gunId: "sung_bang", angle: 30, power: 60, facing: 1 } });
+    bad({ type: "aim_preview", angle: 30, power: 60, facing: 1 });
+    bad({ type: "aim_preview", gunId: "g", angle: 30, power: 160, facing: 1 });
+    bad({ type: "aim_preview", gunId: "g", angle: 30, power: 60, facing: 3 });
   });
   it("angle ngoài khoảng cực đoan bị từ chối; khoảng hợp lý để máy chủ kẹp", () => {
-    expect(parseClientMessage(msg({ type: "battle_shot", angle: 170, power: 5, facing: 1 })).ok).toBe(true);
-    bad({ type: "battle_shot", angle: 100000, power: 5, facing: 1 });
+    expect(parseClientMessage(msg({ type: "battle_shot", angle: 170, power: 5, facing: 1, gunId: "g" })).ok).toBe(true);
+    bad({ type: "battle_shot", angle: 100000, power: 5, facing: 1, gunId: "g" });
   });
 });

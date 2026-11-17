@@ -5,15 +5,19 @@ import {
   chooseMonsterShot,
   createBattleState,
   outcome,
+  previewShot,
   resolveShots,
+  validateShot,
 } from "./battle/engine.js";
-import type { BattleState, MoveCommand, ShotCommand } from "./battle/types.js";
+import type { BattleState, MoveCommand, ShotCommand, SignId, Unit } from "./battle/types.js";
 import type { Clock } from "./clock.js";
 import type { GameData, MonsterDef } from "./data.js";
-import { PROTOCOL_VERSION, type Character, type ServerMessage, type UnitInfo } from "./protocol.js";
+import { PROTOCOL_VERSION, type Character, type ServerMessage, type UnitInfo, type UnitPhaseState } from "./protocol.js";
 
 export interface MatchPlayer {
   name: string;
+  /** Cung của nhân vật; quyết định bộ súng và nội tại. */
+  sign: string;
   gunId: string;
   send(msg: ServerMessage): void;
   isConnected(): boolean;
@@ -35,6 +39,7 @@ export interface MatchParams {
 type Phase = "move" | "aim" | "wait" | "ended";
 
 const PLAYER_ID = 1;
+const PREVIEW_WINDOW_MS = 1000;
 
 export class Match {
   private readonly p: MatchParams;
@@ -45,24 +50,36 @@ export class Match {
   private cancel: (() => void) | null = null;
   private pendingMove: number | null = null;
   private pendingShot: ShotCommand | null = null;
+  /** Giờ máy chủ lúc bắt đầu pha ngắm; mốc cho aimElapsedSeconds (không tin giờ client). */
+  private aimStartedAt = 0;
+  private previewTimes: number[] = [];
   private readonly maxTurns: number;
 
   constructor(p: MatchParams) {
     this.p = p;
     const map = p.data.battleMaps[p.monster.battleMapId]!;
     this.maxTurns = p.data.settings.maxTurnsPerMatch;
-    const units = [
-      {
-        id: PLAYER_ID,
-        kind: "player" as const,
-        name: p.player.name,
-        team: 0 as const,
-        col: map.playerSpawnCols[0]!,
-        hp: p.data.character.baseHp,
-        maxHp: p.data.character.baseHp,
-        facing: 1 as const,
-        gunId: p.player.gunId,
-      },
+    const ch = p.data.character;
+    const signDef = ch.signDefs[p.player.sign];
+    const playerUnit: Omit<Unit, "y" | "alive"> = {
+      id: PLAYER_ID,
+      kind: "player",
+      name: p.player.name,
+      team: 0,
+      col: map.playerSpawnCols[0]!,
+      hp: ch.baseHp,
+      maxHp: ch.baseHp,
+      facing: 1,
+      gunId: p.player.gunId,
+      guns: [...(signDef?.gunIds ?? []), ...ch.commonGunIds],
+      sign: (signDef?.id ?? null) as SignId | null,
+      passive: signDef?.passive ?? null,
+      energy: ch.energyStart,
+      cooldowns: {},
+      statuses: [],
+    };
+    const units: Omit<Unit, "y" | "alive">[] = [
+      playerUnit,
       ...Array.from({ length: p.monster.groupSize }, (_, i) => ({
         id: PLAYER_ID + 1 + i,
         kind: "monster" as const,
@@ -73,6 +90,12 @@ export class Match {
         maxHp: p.monster.hp,
         facing: -1 as const,
         gunId: p.monster.gunId,
+        guns: [p.monster.gunId],
+        sign: null,
+        passive: null,
+        energy: 0,
+        cooldowns: {},
+        statuses: [],
         aiErrorTiles: p.monster.aiErrorTiles,
       })),
     ];
@@ -83,19 +106,40 @@ export class Match {
     this.p.player.send(msg);
   }
 
+  private phaseUnits(): UnitPhaseState[] {
+    return this.state.units.map((u) => {
+      const s: UnitPhaseState = {
+        id: u.id,
+        hp: u.hp,
+        energy: u.energy,
+        cooldowns: { ...u.cooldowns },
+        statuses: u.statuses.map((x) => ({ ...x })),
+      };
+      if (u.kind === "player") s.guns = [...u.guns];
+      return s;
+    });
+  }
+
   start(): void {
     const s = this.state;
-    const units: UnitInfo[] = s.units.map((u) => ({
-      id: u.id,
-      kind: u.kind,
-      name: u.name,
-      team: u.team,
-      col: u.col,
-      y: u.y,
-      hp: u.hp,
-      maxHp: u.maxHp,
-      facing: u.facing,
-    }));
+    const units: UnitInfo[] = s.units.map((u) => {
+      const info: UnitInfo = {
+        id: u.id,
+        kind: u.kind,
+        name: u.name,
+        team: u.team,
+        col: u.col,
+        y: u.y,
+        hp: u.hp,
+        maxHp: u.maxHp,
+        facing: u.facing,
+        energy: u.energy,
+        cooldowns: { ...u.cooldowns },
+        statuses: u.statuses.map((x) => ({ ...x })),
+      };
+      if (u.kind === "player") info.guns = [...u.guns];
+      return info;
+    });
     this.send({
       v: PROTOCOL_VERSION,
       type: "match_start",
@@ -121,12 +165,45 @@ export class Match {
     return "ok";
   }
 
-  handleShot(angle: number, power: number, facing: -1 | 1): "ok" | "not_allowed" {
+  handleShot(angle: number, power: number, facing: -1 | 1, gunId: string): "ok" | "not_allowed" {
     if (this.phase !== "aim" || !this.playerAlive()) return "not_allowed";
     const cfg = this.p.data.battle;
     const a = Math.max(cfg.aimAngleMinDegrees, Math.min(cfg.aimAngleMaxDegrees, angle));
-    this.pendingShot = { unitId: PLAYER_ID, angle: a, power, facing };
+    const cmd: ShotCommand = {
+      unitId: PLAYER_ID,
+      angle: a,
+      power,
+      facing,
+      gunId,
+      aimElapsedSeconds: Math.max(0, (this.p.clock.now() - this.aimStartedAt) / 1000),
+    };
+    if (validateShot(this.state, cmd, this.p.data.guns) !== "ok") return "not_allowed";
+    this.pendingShot = cmd;
     this.endEarlyIfReady();
+    return "ok";
+  }
+
+  /**
+   * Đường ngắm dự đoán (Xử Nữ, có Ngắm chuẩn). "not_allowed": sai pha / không có Ngắm chuẩn / súng không hợp lệ;
+   * "dropped": quá giới hạn mỗi giây, bỏ qua lặng lẽ.
+   */
+  handlePreview(angle: number, power: number, facing: -1 | 1, gunId: string): "ok" | "not_allowed" | "dropped" {
+    if (this.phase !== "aim") return "not_allowed";
+    const me = this.state.units.find((u) => u.id === PLAYER_ID);
+    const gun = this.p.data.guns[gunId];
+    if (!me || !me.alive || !gun || gun.kind === "self" || !me.guns.includes(gunId)) return "not_allowed";
+    if (!me.statuses.some((s) => s.type === "trueAim")) return "not_allowed";
+    const pas = me.passive;
+    if (pas?.type !== "precision") return "not_allowed";
+    const now = this.p.clock.now();
+    this.previewTimes = this.previewTimes.filter((t) => now - t < PREVIEW_WINDOW_MS);
+    if (this.previewTimes.length >= pas.aimPreviewPerSecond) return "dropped";
+    this.previewTimes.push(now);
+    const cfg = this.p.data.battle;
+    const a = Math.max(cfg.aimAngleMinDegrees, Math.min(cfg.aimAngleMaxDegrees, angle));
+    const cmd: ShotCommand = { unitId: PLAYER_ID, angle: a, power, facing, gunId, aimElapsedSeconds: 0 };
+    const points = previewShot(this.state, cmd, this.p.data.guns, cfg, pas.aimPreviewFraction);
+    this.send({ v: PROTOCOL_VERSION, type: "aim_preview", points });
     return "ok";
   }
 
@@ -147,7 +224,19 @@ export class Match {
     this.phase = phase;
     const secs = phase === "move" ? this.p.data.settings.movePhaseSeconds : this.p.data.settings.aimPhaseSeconds;
     const now = this.p.clock.now();
-    this.send({ v: PROTOCOL_VERSION, type: "phase", turn: this.turn, phase, deadline: now + secs * 1000, serverTime: now });
+    if (phase === "aim") {
+      this.aimStartedAt = now;
+      this.previewTimes = [];
+    }
+    this.send({
+      v: PROTOCOL_VERSION,
+      type: "phase",
+      turn: this.turn,
+      phase,
+      deadline: now + secs * 1000,
+      serverTime: now,
+      units: this.phaseUnits(),
+    });
     this.cancel?.();
     this.cancel = this.p.clock.setTimeout(() => this.finishPhase(), secs * 1000);
     // không còn ai để chờ: kết thúc pha ở nhịp kế tiếp (không đệ quy đồng bộ)
@@ -198,14 +287,16 @@ export class Match {
     const deaths = [...r.result.deaths];
 
     // bỏ lỡ quá số lượt cho phép: loại khỏi trận (hp = 0)
+    let resultUnits = r.result.units;
     if (this.playerAlive() && this.missed >= this.p.data.settings.disconnectMissedTurnsToKick) {
       this.state = {
         ...this.state,
         units: this.state.units.map((u) => (u.id === PLAYER_ID ? { ...u, hp: 0, alive: false } : u)),
       };
       deaths.push(PLAYER_ID);
+      resultUnits = resultUnits.map((u) => (u.id === PLAYER_ID ? { ...u, hp: 0 } : u));
     }
-    this.send({ v: PROTOCOL_VERSION, type: "turn_result", ...r.result, deaths });
+    this.send({ v: PROTOCOL_VERSION, type: "turn_result", ...r.result, deaths, units: resultUnits });
 
     const flight = r.result.shots.reduce((m, s) => Math.max(m, s.flightSeconds), 0);
     const waitMs = (flight + this.p.data.settings.replayPaddingSeconds) * 1000;

@@ -1,12 +1,23 @@
 {
   "baseHp": 150,
   "worldSpeedTilesPerSec": 4,
-  "startingGunId": "thuoc_no_nho",
+  "commonGunIds": ["thuoc_no_nho"],
   "expPerLevel": 100,
+  "energyStart": 3,
+  "energyMax": 10,
   "signs": [
-    { "id": "bach_duong", "ten": "Bạch Dương" },
-    { "id": "kim_nguu", "ten": "Kim Ngưu" },
-    { "id": "xu_nu", "ten": "Xử Nữ" },
-    { "id": "bao_binh", "ten": "Bảo Bình" }
+    { "id": "bach_duong", "ten": "Bạch Dương",
+      "gunIds": ["phao_dan_no", "sung_nung_do", "dan_xung_kich"],
+      "passive": { "type": "earlyShot", "earlyShotSeconds": 10, "earlyShotDamageBonus": 0.15, "lineBonus": 0.1 } },
+    { "id": "kim_nguu", "ten": "Kim Ngưu",
+      "gunIds": ["sung_tieu_lien", "khien_dan", "sung_nang"],
+      "passive": { "type": "toughness", "damageTakenReduction": 0.15, "lineBonus": 0.05 } },
+    { "id": "xu_nu", "ten": "Xử Nữ",
+      "gunIds": ["sung_bang", "dan_lanh", "sung_kinh"],
+      "passive": { "type": "precision", "deviationReduction": 0.3, "lineBonus": 0.1,
+        "aimPreviewFraction": 0.4, "aimPreviewPerSecond": 5 } },
+    { "id": "bao_binh", "ten": "Bảo Bình",
+      "gunIds": ["phao_sao_bang", "dan_sao", "thien_thach"],
+      "passive": { "type": "meteorPush", "digBelowOnHit": 1, "lineBonusStones": 1, "lineBonus": 0.1 } }
   ]
 }

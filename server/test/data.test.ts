@@ -48,9 +48,51 @@ describe("nạp dữ liệu", () => {
     expect(() => validateGameData(d)).toThrow();
   });
 
-  it("từ chối súng khởi đầu không có", () => {
+  it("từ chối súng chung không có", () => {
     const d = testData();
-    d.character.startingGunId = "nope";
+    d.character.commonGunIds = ["nope"];
     expect(() => validateGameData(d)).toThrow(/nope/);
+  });
+
+  it("nạp bộ súng và nội tại của 4 cung", () => {
+    const d = loadGameData();
+    expect(d.character.commonGunIds).toEqual(["thuoc_no_nho"]);
+    expect(d.character.energyStart).toBe(3);
+    expect(d.battle.energyMax).toBe(10);
+    expect(d.battle.energyRegenPerTurn).toBe(2);
+    for (const s of d.character.signs) {
+      const sd = d.character.signDefs[s]!;
+      expect(sd.gunIds).toHaveLength(3);
+      for (const g of sd.gunIds) expect(d.guns[g]!.sign).toBe(s);
+    }
+    expect(d.character.signDefs["bach_duong"]!.passive.type).toBe("earlyShot");
+    expect(d.guns["sung_tieu_lien"]).toMatchObject({ kind: "burst", count: 3, powerOffsets: [-4, 0, 4] });
+    expect(d.guns["phao_sao_bang"]).toMatchObject({ kind: "shower", count: 4, spreadTiles: 3 });
+    expect(d.guns["khien_dan"]!.selfEffect).toEqual({ type: "shield", amount: 40 });
+    expect(d.guns["thien_thach"]).toMatchObject({ craterDepthTiles: 2, stun: { turns: 1 } });
+  });
+
+  it("từ chối súng của cung khác trong gunIds", () => {
+    const d = testData();
+    d.character.signDefs["xu_nu"]!.gunIds[0] = "phao_dan_no";
+    expect(() => validateGameData(d)).toThrow(/phao_dan_no/);
+  });
+
+  it("từ chối gunIds trỏ tới súng không có", () => {
+    const d = testData();
+    d.character.signDefs["kim_nguu"]!.gunIds[1] = "khong_co";
+    expect(() => validateGameData(d)).toThrow(/khong_co/);
+  });
+
+  it("từ chối súng kind thiếu trường riêng", () => {
+    const d = testData();
+    delete d.guns["sung_tieu_lien"]!.powerOffsets;
+    expect(() => validateGameData(d)).toThrow(/sung_tieu_lien/);
+    const e = testData();
+    delete e.guns["khien_dan"]!.selfEffect;
+    expect(() => validateGameData(e)).toThrow(/khien_dan/);
+    const f = testData();
+    delete f.guns["phao_sao_bang"]!.spreadTiles;
+    expect(() => validateGameData(f)).toThrow(/phao_sao_bang/);
   });
 });

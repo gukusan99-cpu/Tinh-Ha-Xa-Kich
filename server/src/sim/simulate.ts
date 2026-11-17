@@ -1,10 +1,18 @@
 /**
- * Mô phỏng cân bằng trận: dựng trận giống hệt match.ts (cùng cột xuất phát, groupSize, hp, súng,
- * maxTurns, độ lệch) từ dữ liệu thật, cho bot người chơi đánh, trả kết quả. Hàm thuần, tất định theo seed.
- * Ghi đè giá trị chỉ áp dụng trong bộ nhớ, không đụng file data/.
+ * Mô phỏng cân bằng trận: dựng trận giống hệt match.ts (cùng cột xuất phát, groupSize, hp, bộ súng theo cung,
+ * nội lực, maxTurns, độ lệch) từ dữ liệu thật, cho bot người chơi đánh, trả kết quả. Hàm thuần, tất định theo seed.
+ * Ghi đè giá trị chỉ áp dụng trong bộ nhớ, không đụng file data/. Bot không di chuyển (như Giai đoạn 1).
  */
-import { chooseMonsterShot, createBattleState, mulberry32, outcome, resolveShots } from "../battle/engine.js";
-import type { BattleState, ShotCommand } from "../battle/types.js";
+import {
+  chooseMonsterShot,
+  createBattleState,
+  mulberry32,
+  outcome,
+  probeShot,
+  resolveShots,
+  validateShot,
+} from "../battle/engine.js";
+import type { BattleConfig, BattleState, GunStats, ShotCommand, SignId, Unit } from "../battle/types.js";
 import { loadGameData, type GameData } from "../data.js";
 
 export type Policy = "gioi" | "ngau_nhien" | "trung_binh";
@@ -34,6 +42,8 @@ export const OVERRIDE_KEYS: (keyof Overrides)[] = [
 export interface SimOptions {
   policy: Policy;
   seed: number;
+  /** Cung của bot; bỏ trống = chỉ súng chung, không nội tại. */
+  sign?: string;
   /** Mặc định: quái đầu tiên trong data/quai.json. */
   monsterId?: string;
   overrides?: Overrides;
@@ -54,6 +64,164 @@ export function getData(): GameData {
 
 const PLAYER_ID = 1;
 
+// ---------- bot "giỏi": chọn súng tốt nhất bằng mô phỏng ứng viên ----------
+
+/** Giá một điểm nội lực quy ra sát thương, để bot không phung phí nội lực. */
+const ENERGY_PRICE = 1.5;
+/** Số ứng viên (góc, lực) mỗi súng được đánh giá chính xác bằng engine. */
+const TOP_CANDIDATES = 3;
+/** Giá trị tối thiểu của một đòn tấn công để coi là "bắn trúng được". */
+const MIN_ATTACK_VALUE = 1;
+
+interface Probe {
+  angle: number;
+  power: number;
+  facing: -1 | 1;
+  impact: { x: number; y: number } | null;
+  hit: number | null;
+}
+
+function probeTable(state: BattleState, me: Unit, cfg: BattleConfig): Probe[] {
+  const facings = new Set<-1 | 1>();
+  for (const u of state.units) if (u.team !== me.team && u.alive) facings.add(u.col >= me.col ? 1 : -1);
+  if (facings.size === 0) facings.add(me.facing);
+  const out: Probe[] = [];
+  const step = cfg.aiAngleStepDegrees;
+  for (const facing of facings) {
+    for (let angle = step; angle <= cfg.aimAngleMaxDegrees; angle += step) {
+      if (angle < cfg.aimAngleMinDegrees) continue;
+      for (let power = 10; power <= 100; power += 5) {
+        const f = probeShot(state, me.id, angle, power, facing, cfg);
+        if (f?.impact) out.push({ angle, power, facing, impact: f.impact, hit: f.hitUnitId });
+      }
+    }
+  }
+  return out;
+}
+
+/** Điểm thô của một điểm chạm: sát thương xấp xỉ lên địch trừ lên phe mình (dùng để chọn ứng viên). */
+function proxyScore(state: BattleState, me: Unit, gun: GunStats, p: Probe, cfg: BattleConfig): number {
+  const imp = p.impact!;
+  const reach = gun.kind === "shower" ? gun.blastRadiusTiles + (gun.spreadTiles ?? 0) : gun.blastRadiusTiles;
+  const scale = gun.kind === "shower" ? (gun.count ?? 1) * 0.5 : gun.kind === "burst" ? (gun.count ?? 1) : 1;
+  let s = 0;
+  for (const u of state.units) {
+    if (!u.alive) continue;
+    const cx = u.col + 0.5;
+    const cy = u.y - cfg.unitRadiusTiles;
+    const dist = p.hit === u.id ? 0 : gun.kind === "shower" ? Math.abs(imp.x - cx) : Math.hypot(imp.x - cx, imp.y - cy);
+    const v = gun.damage * scale * Math.max(0, 1 - dist / (reach + cfg.unitRadiusTiles));
+    s += u.team === me.team ? -v : v;
+  }
+  return s;
+}
+
+function evalCmd(state: BattleState, me: Unit, cmd: ShotCommand, guns: Record<string, GunStats>, cfg0: BattleConfig): number {
+  const r = resolveShots(state, [cmd], guns, cfg0, 1);
+  let v = 0;
+  for (const after of r.result.units) {
+    const before = state.units.find((u) => u.id === after.id)!;
+    const lost = before.hp - after.hp;
+    if (before.team === me.team) {
+      v -= lost * (before.id === me.id ? 1.2 : 1);
+      if (before.id === me.id && after.hp <= 0) v -= 1000;
+    } else {
+      v += lost;
+      for (const s of after.statuses) if (s.type === "burn" && after.hp > 0) v += s.turns * s.damagePerTurn;
+    }
+  }
+  return v - guns[cmd.gunId]!.energyCost * ENERGY_PRICE;
+}
+
+interface Pick {
+  cmd: ShotCommand;
+  value: number;
+}
+
+function bestAttack(
+  state: BattleState,
+  me: Unit,
+  usable: GunStats[],
+  table: Probe[],
+  guns: Record<string, GunStats>,
+  cfg: BattleConfig,
+  cfg0: BattleConfig,
+  elapsed: number,
+): Pick | null {
+  let best: Pick | null = null;
+  for (const gun of usable) {
+    if (gun.kind === "self" || gun.damage <= 0) continue;
+    const ranked = table
+      .map((p) => ({ p, s: proxyScore(state, me, gun, p, cfg) }))
+      .sort((a, b) => b.s - a.s)
+      .slice(0, TOP_CANDIDATES);
+    for (const { p } of ranked) {
+      const cmd: ShotCommand = {
+        unitId: me.id,
+        angle: p.angle,
+        power: p.power,
+        facing: p.facing,
+        gunId: gun.id,
+        aimElapsedSeconds: elapsed,
+      };
+      const value = evalCmd(state, me, cmd, guns, cfg0);
+      if (!best || value > best.value) best = { cmd, value };
+    }
+  }
+  return best;
+}
+
+/** Sát thương dự kiến quái gây lên `me` nếu bắn chuẩn (nhân 0.5 vì quái bắn lệch). */
+function predictedIncoming(state: BattleState, me: Unit, guns: Record<string, GunStats>, cfg: BattleConfig, cfg0: BattleConfig): number {
+  const exact: BattleState = { ...state, units: state.units.map((u) => (u.team === 1 ? { ...u, aiErrorTiles: 0 } : u)) };
+  const cmds: ShotCommand[] = [];
+  for (const u of exact.units) if (u.team !== me.team && u.alive) cmds.push(chooseMonsterShot(exact, u.id, guns, cfg));
+  if (cmds.length === 0) return 0;
+  const r = resolveShots(exact, cmds, guns, cfg0, 1);
+  return r.result.damage.filter((d) => d.unitId === me.id).reduce((s, d) => s + d.amount, 0) * 0.5;
+}
+
+function goodShot(
+  state: BattleState,
+  me: Unit,
+  guns: Record<string, GunStats>,
+  cfg: BattleConfig,
+  elapsed: number,
+): ShotCommand {
+  const cfg0: BattleConfig = { ...cfg, deviationMaxTiles: 0, critChance: 0 };
+  const usable = me.guns
+    .map((id) => guns[id]!)
+    .filter((g) => validateShot(state, { unitId: me.id, angle: 0, power: 0, facing: 1, gunId: g.id, aimElapsedSeconds: 0 }, guns) === "ok");
+  const table = probeTable(state, me, cfg);
+  const attack = bestAttack(state, me, usable, table, guns, cfg, cfg0, elapsed);
+
+  let best: Pick | null = attack;
+  const attackValue = attack?.value ?? 0;
+  const selfGuns = usable.filter((g) => g.kind === "self");
+  const needIncoming = selfGuns.some((g) => g.selfEffect?.type === "shield");
+  const incoming = needIncoming ? predictedIncoming(state, me, guns, cfg, cfg0) : 0;
+  for (const g of selfGuns) {
+    let value = -Infinity;
+    if (g.selfEffect?.type === "shield") {
+      value = Math.min(g.selfEffect.amount, incoming) - g.energyCost * ENERGY_PRICE;
+    } else if (g.selfEffect?.type === "trueAim") {
+      // chỉ đáng dùng khi lượt này không bắn trúng được (lượt sau bắn không lệch)
+      const has = me.statuses.some((s) => s.type === "trueAim");
+      value = !has && attackValue < MIN_ATTACK_VALUE ? MIN_ATTACK_VALUE : -Infinity;
+    }
+    if (value > (best?.value ?? -Infinity) && (value > 0 || attackValue < MIN_ATTACK_VALUE)) {
+      best = { cmd: { unitId: me.id, angle: 45, power: 50, facing: me.facing, gunId: g.id, aimElapsedSeconds: elapsed }, value };
+    }
+  }
+  if (best) return best.cmd;
+  // không khẩu nào dùng được hiệu quả: bắn súng rẻ nhất vào mục tiêu gần nhất
+  const fallback = usable.find((g) => g.kind !== "self") ?? usable[0];
+  const gunId = fallback?.id ?? me.gunId;
+  return { ...chooseMonsterShot(state, me.id, guns, cfg), gunId, aimElapsedSeconds: elapsed };
+}
+
+// ---------- mô phỏng một trận ----------
+
 export function simulateMatch(opts: SimOptions): SimResult {
   const data = opts.data ?? getData();
   const ov = opts.overrides ?? {};
@@ -63,14 +231,16 @@ export function simulateMatch(opts: SimOptions): SimResult {
 
   const cfg = { ...data.battle };
   if (ov.deviationMaxTiles !== undefined) cfg.deviationMaxTiles = ov.deviationMaxTiles;
-  const guns = Object.fromEntries(
+  const guns: Record<string, GunStats> = Object.fromEntries(
     Object.entries(data.guns).map(([id, g]) => [
       id,
-      {
-        ...g,
-        damage: ov.gunDamage ?? g.damage,
-        blastRadiusTiles: ov.blastRadiusTiles ?? g.blastRadiusTiles,
-      },
+      g.kind === "self"
+        ? g
+        : {
+            ...g,
+            damage: ov.gunDamage ?? g.damage,
+            blastRadiusTiles: ov.blastRadiusTiles ?? g.blastRadiusTiles,
+          },
     ]),
   );
   const maxTurns = ov.maxTurnsPerMatch ?? data.settings.maxTurnsPerMatch;
@@ -79,18 +249,28 @@ export function simulateMatch(opts: SimOptions): SimResult {
   const aiError = ov.aiErrorTiles ?? monsterDef.aiErrorTiles;
   const groupSize = Math.min(ov.groupSize ?? monsterDef.groupSize, map.monsterSpawnCols.length);
 
+  const ch = data.character;
+  const signDef = opts.sign !== undefined ? ch.signDefs[opts.sign] : undefined;
+  if (opts.sign !== undefined && !signDef) throw new Error(`cung không có trong dữ liệu: ${opts.sign}`);
+
   // giống Match: người chơi id 1, quái id 2..; cột xuất phát theo map
-  const units = [
+  const units: Omit<Unit, "y" | "alive">[] = [
     {
       id: PLAYER_ID,
-      kind: "player" as const,
+      kind: "player",
       name: "bot",
-      team: 0 as const,
+      team: 0,
       col: map.playerSpawnCols[0]!,
       hp: baseHp,
       maxHp: baseHp,
-      facing: 1 as const,
-      gunId: data.character.startingGunId,
+      facing: 1,
+      gunId: ch.commonGunIds[0]!,
+      guns: [...(signDef?.gunIds ?? []), ...ch.commonGunIds],
+      sign: (signDef?.id ?? null) as SignId | null,
+      passive: signDef?.passive ?? null,
+      energy: ch.energyStart,
+      cooldowns: {},
+      statuses: [],
     },
     ...Array.from({ length: groupSize }, (_, i) => ({
       id: PLAYER_ID + 1 + i,
@@ -102,6 +282,12 @@ export function simulateMatch(opts: SimOptions): SimResult {
       maxHp: monsterHp,
       facing: -1 as const,
       gunId: monsterDef.gunId,
+      guns: [monsterDef.gunId],
+      sign: null,
+      passive: null,
+      energy: 0,
+      cooldowns: {},
+      statuses: [],
       aiErrorTiles: aiError,
     })),
   ];
@@ -110,6 +296,7 @@ export function simulateMatch(opts: SimOptions): SimResult {
   const turnRng = mulberry32(opts.seed);
   const botRng = mulberry32((opts.seed ^ 0x9e3779b9) >>> 0);
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const aimSeconds = data.settings.aimPhaseSeconds;
 
   const playerShot = (): ShotCommand => {
     const me = state.units.find((u) => u.id === PLAYER_ID)!;
@@ -124,11 +311,16 @@ export function simulateMatch(opts: SimOptions): SimResult {
           facing = u.col >= me.col ? 1 : -1;
         }
       }
+      const usable = me.guns.filter(
+        (id) => validateShot(state, { unitId: PLAYER_ID, angle: 0, power: 0, facing: 1, gunId: id, aimElapsedSeconds: 0 }, guns) === "ok",
+      );
+      const gunId = usable[Math.floor(botRng() * usable.length)] ?? me.gunId;
       const angle = cfg.aimAngleMinDegrees + botRng() * (cfg.aimAngleMaxDegrees - cfg.aimAngleMinDegrees);
-      return { unitId: PLAYER_ID, angle, power: 10 + botRng() * 90, facing };
+      return { unitId: PLAYER_ID, angle, power: 10 + botRng() * 90, facing, gunId, aimElapsedSeconds: botRng() * aimSeconds };
     }
-    const good = chooseMonsterShot(state, PLAYER_ID, guns, cfg);
-    if (opts.policy === "gioi") return good;
+    if (opts.policy === "gioi") return goodShot(state, me, guns, cfg, 1);
+    const good = goodShot(state, me, guns, cfg, botRng() * aimSeconds);
+    if (guns[good.gunId]?.kind === "self") return good;
     return {
       ...good,
       power: clamp(good.power + (botRng() * 2 - 1) * 8, 0, 100),
@@ -166,14 +358,14 @@ export interface Summary {
   avgHpOnWin: number;
 }
 
-export function runMany(policy: Policy, n: number, overrides: Overrides = {}, baseSeed = 1): Summary {
+export function runMany(policy: Policy, n: number, overrides: Overrides = {}, baseSeed = 1, sign?: string): Summary {
   let win = 0;
   let lose = 0;
   let draw = 0;
   let turns = 0;
   let hpWin = 0;
   for (let i = 0; i < n; i++) {
-    const r = simulateMatch({ policy, seed: (baseSeed + i * 7919) >>> 0, overrides });
+    const r = simulateMatch({ policy, seed: (baseSeed + i * 7919) >>> 0, overrides, sign });
     turns += r.turns;
     if (r.outcome === "win") {
       win++;
