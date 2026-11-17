@@ -10,7 +10,7 @@
 - [x] Client: đăng nhập, tạo nhân vật, bản đồ thế giới, màn trận phát lại. 25 test.
 - [x] Bot e2e `tests/e2e_full.gd` đi hết luồng, không lỗi.
 - [ ] Người chơi thử bằng tay trong Godot editor, góp ý cảm giác điều khiển.
-- [ ] Cân bằng: bot bắn ước lượng thua 2 quái sau 4 lượt. Cần xem lại máu người chơi, sát thương và `aiErrorTiles` của quái.
+- [x] Cân bằng PvE v1 bằng mô phỏng (`npm run sim` trong `server/`): bot giỏi thắng 90%, trung bình 46%, ngẫu nhiên 0%, trận khoảng 7 lượt.
 - [ ] Thay lưu trữ trong bộ nhớ bằng PostgreSQL/Redis (cần cài trên máy).
 
 ## Giai đoạn 0 (xong)
@@ -26,5 +26,6 @@
 - Cài export template Godot 4.7.2 để xuất Web; cài Android SDK, JDK và keystore để xuất Android.
 
 ## Nhật ký thay đổi
+- 2026-11-18: Cân bằng PvE. `baseHp` 100 → 150, máu `am_thach_nho` 80 → 65, `aiErrorTiles` 4 → 8. Lý do: mô phỏng 2000 trận với số cũ cho bot giỏi chỉ thắng 6,6%. Số mới: giỏi 90,3%, trung bình 46,1%, ngẫu nhiên 0%, trung bình 7,2 lượt (mục tiêu `04`: giỏi ≥70%). Đã thử thêm 13 bộ số khác; bộ này gần mọi mục tiêu nhất.
 - 2026-11-18: Giai đoạn 1. Điền giá trị đề xuất `moveRangeTiles` 5, `aimPowerRange` 0–100, `maxTurnsPerMatch` 20 và các hằng số vật lý trận (lý do: cần số để chạy được, sẽ chỉnh sau mô phỏng). Cài Git for Windows 2.56.1.
 - 2026-11-18: Dựng khung Giai đoạn 0. Đổi `project.godot.txt` thành `project.godot` (Godot không nhận tên cũ). Thêm máy chủ `server/` (18 test), client Godot (6 test), `data/`, `docs/06-kien-truc.md`. Chạy thử end-to-end: client nhận `welcome` và `pong` từ máy chủ thật.
