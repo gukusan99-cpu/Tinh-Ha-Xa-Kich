@@ -41,3 +41,4 @@ Client Godot (chạy ở thư mục gốc):
 - Mở editor: `& $godot --path . --editor`
 - Test đơn vị: `& $godot --headless --path . --script res://tests/run_tests.gd`
 - Test nối máy chủ (cần máy chủ đang chạy): `& $godot --headless --path . --script res://tests/e2e_probe.gd`
+- Bot chơi hết luồng (cần máy chủ đang chạy, khoảng 1–2 phút): `& $godot --headless --path . --script res://tests/e2e_full.gd`. Bỏ `--headless` và đặt `$env:E2E_SHOTS=<thư mục>` để chụp màn hình.
