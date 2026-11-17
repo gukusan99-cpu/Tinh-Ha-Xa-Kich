@@ -57,5 +57,32 @@ static func monster_id_by_name(monsters: Dictionary, unit_name: String) -> Strin
 	return ""
 
 
+## monsterId của một đơn vị trong trận: ưu tiên trường monsterId của máy chủ, rơi về tra theo tên; "" nếu không phải quái.
+static func unit_monster_id(monsters: Dictionary, unit: Dictionary) -> String:
+	var mid := String(unit.get("monsterId", ""))
+	if not mid.is_empty():
+		return mid
+	if String(unit.get("kind", "")) == "monster":
+		return monster_id_by_name(monsters, String(unit.get("name", "")))
+	return ""
+
+
+## id bản đồ trận: battleMapId của match_start; rơi về mapId, rồi battleMapId của quái đầu tiên; "" nếu không có.
+static func battle_map_id(msg: Dictionary, monsters: Dictionary) -> String:
+	var id := String(msg.get("battleMapId", ""))
+	if id.is_empty():
+		id = String(msg.get("mapId", ""))
+	if id.is_empty():
+		for u in msg.get("units", []):
+			if typeof(u) != TYPE_DICTIONARY:
+				continue
+			var mid := unit_monster_id(monsters, u)
+			if not mid.is_empty():
+				id = String(monsters.get(mid, {}).get("battleMapId", ""))
+				if not id.is_empty():
+					break
+	return id
+
+
 static func portal_is_locked(level_required: int, level: int) -> bool:
 	return level_required > level

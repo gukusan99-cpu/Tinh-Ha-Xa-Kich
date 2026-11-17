@@ -77,15 +77,11 @@ func setup(msg: Dictionary, balance: Dictionary) -> void:
 	_pvp = String(msg.get("mode", "pve")) == "pvp"
 	_max_turns = int(msg.get("maxTurns", 0))
 	var monsters := MapInfo.load_monsters()
-	var battle_map := String(msg.get("mapId", ""))
+	var battle_map := MapInfo.battle_map_id(msg, monsters)
 	for u in msg.get("units", []):
 		var d: Dictionary = u
 		var id := int(d["id"])
-		var mid := ""
-		if String(d.get("kind", "")) == "monster":
-			mid = MapInfo.monster_id_by_name(monsters, String(d.get("name", "")))
-			if battle_map.is_empty() and not mid.is_empty():
-				battle_map = String(monsters[mid].get("battleMapId", ""))
+		var mid := MapInfo.unit_monster_id(monsters, d)
 		_units[id] = {
 			"monsterId": mid,
 			"id": id, "name": String(d.get("name", "")), "team": int(d.get("team", 0)),
@@ -98,7 +94,7 @@ func setup(msg: Dictionary, balance: Dictionary) -> void:
 			"guns": [], "energy": 0, "cooldowns": {}, "statuses": [],
 		}
 		GunInfo.apply_unit_state(_units[id], d)
-	if not _pvp and not battle_map.is_empty():
+	if not battle_map.is_empty():
 		_map_title = MapInfo.map_name(battle_map, true)
 	_guns = GameData.load_guns()
 	var nv: Variant = GameData.load_json("res://data/nhan-vat.json")

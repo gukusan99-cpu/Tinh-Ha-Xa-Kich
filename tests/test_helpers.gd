@@ -156,3 +156,30 @@ func test_map_info() -> Array:
 		[MapInfo.portal_is_locked(2, 1) and not MapInfo.portal_is_locked(2, 2) and not MapInfo.portal_is_locked(0, 1), "khóa cổng theo cấp"],
 		[UiText.portal_locked(2) == "Cần đạt cấp 2 để vào", "toast cổng khóa"],
 	])
+
+
+func test_unit_monster_id() -> Array:
+	var mons := {"am_thach_gai": {"ten": "Gai"}, "am_thach_lon": {"ten": "Lon"}}
+	return _check([
+		[MapInfo.unit_monster_id(mons, {"kind": "monster", "name": "Lon", "monsterId": "am_thach_gai"}) == "am_thach_gai", "monsterId của máy chủ được ưu tiên"],
+		[MapInfo.unit_monster_id(mons, {"kind": "monster", "name": "Lon"}) == "am_thach_lon", "không có monsterId thì tra theo tên"],
+		[MapInfo.unit_monster_id(mons, {"kind": "monster", "name": "x"}) == "", "tên lạ thì rỗng"],
+		[MapInfo.unit_monster_id(mons, {"kind": "player", "name": "Lon"}) == "", "người chơi không phải quái"],
+	])
+
+
+func test_battle_map_id() -> Array:
+	var mons := {
+		"am_thach_gai": {"ten": "Gai", "battleMapId": "hem_van_thach_1"},
+		"am_thach_lon": {"ten": "Lon", "battleMapId": "hem_van_thach_1"},
+	}
+	var gai := {"kind": "monster", "name": "Gai"}
+	return _check([
+		[MapInfo.battle_map_id({"battleMapId": "dau_truong_1", "units": [{"kind": "player", "name": "A"}]}, mons) == "dau_truong_1", "PvP: battleMapId của máy chủ"],
+		[MapInfo.battle_map_id({"battleMapId": "dong_am_thach_1", "mapId": "vung_san_1"}, mons) == "dong_am_thach_1", "battleMapId ưu tiên hơn mapId"],
+		[MapInfo.battle_map_id({"mapId": "vung_san_1", "units": [gai]}, mons) == "vung_san_1", "không có battleMapId thì rơi về mapId"],
+		[MapInfo.battle_map_id({"units": [gai]}, mons) == "hem_van_thach_1", "thiếu cả hai: lấy battleMapId của quái"],
+		[MapInfo.battle_map_id({"units": [{"kind": "monster", "monsterId": "am_thach_lon"}]}, mons) == "hem_van_thach_1", "quái có monsterId cũng dùng được"],
+		[MapInfo.battle_map_id({"units": [{"kind": "monster", "name": "x"}]}, mons) == "", "không tìm thấy thì rỗng"],
+		[MapInfo.map_name("dau_truong_1", true) == "Đấu Trường Tinh Tú", "tên bản đồ PvP từ data/tran"],
+	])
