@@ -1,0 +1,13 @@
+{
+  "guns": [
+    {
+      "id": "thuoc_no_nho",
+      "ten": "Súng thuốc nổ nhỏ",
+      "tang": "thuong",
+      "damage": 35,
+      "blastRadiusTiles": 2,
+      "energyCost": 0,
+      "cooldownTurns": 0
+    }
+  ]
+}

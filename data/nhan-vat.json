@@ -1,0 +1,12 @@
+{
+  "baseHp": 100,
+  "worldSpeedTilesPerSec": 4,
+  "startingGunId": "thuoc_no_nho",
+  "expPerLevel": 100,
+  "signs": [
+    { "id": "bach_duong", "ten": "Bạch Dương" },
+    { "id": "kim_nguu", "ten": "Kim Ngưu" },
+    { "id": "xu_nu", "ten": "Xử Nữ" },
+    { "id": "bao_binh", "ten": "Bảo Bình" }
+  ]
+}

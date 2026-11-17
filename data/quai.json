@@ -1,0 +1,15 @@
+{
+  "monsters": [
+    {
+      "id": "am_thach_nho",
+      "ten": "Ám Thạch Nhỏ",
+      "hp": 80,
+      "gunId": "thuoc_no_nho",
+      "aiErrorTiles": 4,
+      "expReward": 20,
+      "worldSpeedTilesPerSec": 1.5,
+      "battleMapId": "dong_am_thach_1",
+      "groupSize": 2
+    }
+  ]
+}
