@@ -12,6 +12,155 @@
       "cooldownTurns": 0
     },
     {
+      "id": "ba_tia",
+      "ten": "Súng ba tia",
+      "tang": "thuong",
+      "sign": null,
+      "kind": "spread",
+      "damage": 14,
+      "blastRadiusTiles": 1,
+      "energyCost": 0,
+      "cooldownTurns": 0,
+      "count": 3,
+      "angleOffsets": [
+        -4,
+        0,
+        4
+      ]
+    },
+    {
+      "id": "lien_thanh",
+      "ten": "Liên thanh",
+      "tang": "thuong",
+      "sign": null,
+      "kind": "burst",
+      "damage": 9,
+      "blastRadiusTiles": 1,
+      "energyCost": 0,
+      "cooldownTurns": 0,
+      "count": 5,
+      "powerOffsets": [
+        -6,
+        -3,
+        0,
+        3,
+        6
+      ]
+    },
+    {
+      "id": "sung_hoi",
+      "ten": "Súng hơi",
+      "tang": "thuong",
+      "sign": null,
+      "kind": "projectile",
+      "damage": 12,
+      "blastRadiusTiles": 1.5,
+      "energyCost": 0,
+      "cooldownTurns": 0,
+      "knockbackTiles": 2
+    },
+    {
+      "id": "laser",
+      "ten": "Laser",
+      "tang": "hiem",
+      "sign": null,
+      "kind": "beam",
+      "damage": 35,
+      "blastRadiusTiles": 0,
+      "energyCost": 4,
+      "cooldownTurns": 1,
+      "beamLengthTiles": 40,
+      "pierceTiles": 2
+    },
+    {
+      "id": "to_nhen",
+      "ten": "Tơ nhện",
+      "tang": "hiem",
+      "sign": null,
+      "kind": "projectile",
+      "damage": 15,
+      "blastRadiusTiles": 1.5,
+      "energyCost": 4,
+      "cooldownTurns": 2,
+      "root": {
+        "turns": 1
+      }
+    },
+    {
+      "id": "noc_doc",
+      "ten": "Nọc độc",
+      "tang": "hiem",
+      "sign": null,
+      "kind": "projectile",
+      "damage": 10,
+      "blastRadiusTiles": 1.5,
+      "energyCost": 5,
+      "cooldownTurns": 2,
+      "zone": {
+        "radiusTiles": 2.5,
+        "turns": 3,
+        "poison": {
+          "turns": 2,
+          "damagePerTurn": 8
+        }
+      }
+    },
+    {
+      "id": "phun_lua",
+      "ten": "Phun lửa",
+      "tang": "hiem",
+      "sign": null,
+      "kind": "spread",
+      "damage": 8,
+      "blastRadiusTiles": 1,
+      "energyCost": 4,
+      "cooldownTurns": 1,
+      "count": 5,
+      "angleOffsets": [
+        -12,
+        -6,
+        0,
+        6,
+        12
+      ],
+      "maxPower": 45,
+      "burn": {
+        "turns": 2,
+        "damagePerTurn": 5
+      }
+    },
+    {
+      "id": "luoi_bang",
+      "ten": "Lưới băng",
+      "tang": "hiem",
+      "sign": null,
+      "kind": "projectile",
+      "damage": 15,
+      "blastRadiusTiles": 3,
+      "energyCost": 4,
+      "cooldownTurns": 1,
+      "slow": {
+        "turns": 1,
+        "tiles": 3
+      }
+    },
+    {
+      "id": "day_dien",
+      "ten": "Dây điện",
+      "tang": "hiem",
+      "sign": null,
+      "kind": "projectile",
+      "damage": 25,
+      "blastRadiusTiles": 1,
+      "energyCost": 4,
+      "cooldownTurns": 1,
+      "chain": {
+        "maxTargets": 2,
+        "radiusTiles": 5,
+        "falloff": 0.6
+      }
+    },
+    {
       "id": "da_am_thach",
       "ten": "Đá Ám Thạch",
       "tang": "quai",

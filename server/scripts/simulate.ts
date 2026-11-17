@@ -1,9 +1,14 @@
 /**
  * CLI mô phỏng cân bằng: npx tsx scripts/simulate.ts [--n 1000] [--seed 1] [--sign <id>|all|none] [--monster <id>|all] [--sweep] [--override key=value ...]
  * PvP (docs/08): npx tsx scripts/simulate.ts --pvp [--n 400] [--seed 1]  (mọi cặp cung, hai bot gioi có né, đổi bên nửa số trận)
+ * Loadout (docs/10): --loadout a,b = toàn bộ súng chung mang theo (thay mặc định thuoc_no_nho), áp dụng cho PvE và PvP.
+ * So sánh: npx tsx scripts/simulate.ts --compare-loadouts [--n 200] [--sign <id>|all] [--seed 1] [--monster <id>]
+ *   (mỗi cung, bot trung_binh: loadout mặc định so với thêm từng súng chung; in thắng% và chênh lệch theo điểm %)
  * Mặc định (không --sign): bảng theo từng cung. `--sign none` = chỉ súng chung, không nội tại.
  */
 import {
+  candidateGuns,
+  compareLoadouts,
   getData,
   OVERRIDE_KEYS,
   POLICIES,
@@ -20,6 +25,9 @@ let n = 1000;
 let seed = 1;
 let sweep = false;
 let pvp = false;
+let compare = false;
+let loadout: string[] | undefined;
+let nGiven = false;
 let signArg = "all";
 /** "" = quái đầu tiên trong data/quai.json; "all" = bảng theo từng quái × cung; hoặc một id quái. */
 let monsterArg = "";
@@ -27,7 +35,11 @@ const overrides: Overrides = {};
 
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]!;
-  if (a === "--n") n = Number(argv[++i]);
+  if (a === "--n") {
+    n = Number(argv[++i]);
+    nGiven = true;
+  } else if (a === "--compare-loadouts") compare = true;
+  else if (a === "--loadout") loadout = (argv[++i] ?? "").split(",").filter((x) => x !== "");
   else if (a === "--seed") seed = Number(argv[++i]);
   else if (a === "--sweep") sweep = true;
   else if (a === "--pvp") pvp = true;
@@ -56,15 +68,38 @@ if (monsterArg !== "" && monsterArg !== "all" && !monsterIds.includes(monsterArg
 }
 const monsterId = monsterArg === "" || monsterArg === "all" ? undefined : monsterArg;
 
-if (monsterArg === "all" && !pvp && !sweep) {
+if (compare) {
+  const signs = signArg === "all" || signArg === "none" ? allSigns : [signArg];
+  const nc = nGiven ? n : 200;
+  const t0 = Date.now();
+  const guns = candidateGuns(getData());
+  console.log(`--compare-loadouts n=${nc} seed=${seed} monster=${monsterId ?? "am_thach_nho"} policy=trung_binh (thắng% và chênh lệch so với loadout mặc định, điểm %)`);
+  const cmp = signs.map((s) => compareLoadouts(s, nc, "trung_binh", seed, monsterId ?? "am_thach_nho"));
+  console.log("gun".padEnd(12) + cmp.map((c) => c.sign.padStart(14)).join(""));
+  console.log("(mặc định)".padEnd(12) + cmp.map((c) => pct(c.baseline).padStart(14)).join(""));
+  for (const g of guns) {
+    console.log(
+      g.padEnd(12) +
+        cmp
+          .map((c) => {
+            const r = c.rows.find((x) => x.gunId === g)!;
+            return `${pct(r.win)} ${(r.deltaPoints >= 0 ? "+" : "") + r.deltaPoints.toFixed(1)}`.padStart(14);
+          })
+          .join(""),
+    );
+  }
+  const avg = guns.map((g) => ({ g, d: cmp.reduce((s, c) => s + c.rows.find((x) => x.gunId === g)!.deltaPoints, 0) / cmp.length }));
+  console.log("\nTB theo súng (điểm %): " + avg.map((x) => `${x.g} ${x.d >= 0 ? "+" : ""}${x.d.toFixed(1)}`).join(", "));
+  console.log(`(${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+} else if (monsterArg === "all" && !pvp && !sweep) {
   const signs: (string | undefined)[] = signArg === "all" ? allSigns : signArg === "none" ? [undefined] : [signArg];
   const t0 = Date.now();
   console.log(`n=${n} seed=${seed} overrides=${JSON.stringify(overrides)}`);
   console.log("monster          sign        gioi    | trung_binh | turns(gioi)");
   for (const mid of monsterIds) {
     for (const sign of signs) {
-      const g = runMany("gioi", n, overrides, seed, sign, mid);
-      const t = runMany("trung_binh", n, overrides, seed, sign, mid);
+      const g = runMany("gioi", n, overrides, seed, sign, mid, loadout);
+      const t = runMany("trung_binh", n, overrides, seed, sign, mid, loadout);
       console.log(
         `${mid.padEnd(16)} ${(sign ?? "none").padEnd(11)} ${pct(g.win)} | ${pct(t.win)}     | ${g.avgTurns.toFixed(2)}`,
       );
@@ -76,7 +111,7 @@ if (monsterArg === "all" && !pvp && !sweep) {
   const t0 = Date.now();
   const signs = getData().character.signs;
   const res = new Map<string, PvpPairSummary>();
-  for (const [a, b] of pvpPairs(signs)) res.set(`${a}|${b}`, runPvpPair(a, b, nPvp, seed));
+  for (const [a, b] of pvpPairs(signs)) res.set(`${a}|${b}`, runPvpPair(a, b, nPvp, seed, undefined, { a: loadout, b: loadout }));
   const cell = (row: string, col: string): string => {
     const direct = res.get(`${row}|${col}`);
     if (direct) {
@@ -117,7 +152,7 @@ if (monsterArg === "all" && !pvp && !sweep) {
   const winTable: Record<string, Record<string, Summary>> = {};
   for (const sign of signs) {
     for (const p of POLICIES) {
-      const s = runMany(p, n, overrides, seed, sign, monsterId);
+      const s = runMany(p, n, overrides, seed, sign, monsterId, loadout);
       (winTable[sign ?? "none"] ??= {})[p] = s;
       console.log(
         `${(sign ?? "none").padEnd(11)} ${p.padEnd(12)} ${pct(s.win)} ${pct(s.lose)} ${pct(s.draw)}  ${s.avgTurns.toFixed(2).padStart(7)}  ${s.avgHpOnWin.toFixed(1).padStart(9)}`,

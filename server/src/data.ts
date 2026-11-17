@@ -61,6 +61,8 @@ export interface MonsterDef {
   groupSize: number;
   /** Số cột tối đa quái đi mỗi lượt trong trận; 0 = đứng yên (docs/09). */
   moveRangeTiles: number;
+  /** Bảng rơi súng khi thắng PvE (docs/10): mỗi mục quay một lần mỗi quái bị hạ. */
+  drops: { gunId: string; chance: number }[];
 }
 export interface SignDef {
   id: SignId;
@@ -73,6 +75,10 @@ export interface CharacterRules {
   worldSpeedTilesPerSec: number;
   /** Súng chung, ai cũng mang; phần tử đầu là `Character.gunId` khi tạo nhân vật. */
   commonGunIds: string[];
+  /** Súng chung nhân vật mới có sẵn (kho). */
+  startingOwnedGunIds: string[];
+  /** Số ô súng chung tối đa trong loadout. */
+  extraGunSlots: number;
   expPerLevel: number;
   energyStart: number;
   energyMax: number;
@@ -282,6 +288,14 @@ export function loadGameData(): GameData {
       if (typeof g !== "string" || g === "") throw new Error(`${wn}: commonGunIds phải là chuỗi`);
       return g;
     }),
+    startingOwnedGunIds:
+      nv["startingOwnedGunIds"] === undefined
+        ? []
+        : arr(nv, "startingOwnedGunIds", wn).map((g) => {
+            if (typeof g !== "string" || g === "") throw new Error(`${wn}: startingOwnedGunIds phải là chuỗi`);
+            return g;
+          }),
+    extraGunSlots: nv["extraGunSlots"] === undefined ? 0 : num(nv, "extraGunSlots", wn),
     expPerLevel: num(nv, "expPerLevel", wn),
     energyStart: num(nv, "energyStart", wn),
     energyMax: num(nv, "energyMax", wn),
@@ -306,6 +320,13 @@ export function loadGameData(): GameData {
       battleMapId: str(mo, "battleMapId", w),
       groupSize: num(mo, "groupSize", w),
       moveRangeTiles: num(mo, "moveRangeTiles", w),
+      drops:
+        mo["drops"] === undefined
+          ? []
+          : arr(mo, "drops", w).map((x, j) => {
+              const dd = obj(x, `${w}.drops[${j}]`);
+              return { gunId: str(dd, "gunId", `${w}.drops[${j}]`), chance: num(dd, "chance", `${w}.drops[${j}]`) };
+            }),
     };
   }
 
@@ -362,6 +383,11 @@ function positive(v: number, w: string): void {
   if (!(v > 0)) throw new Error(`${w}: phải > 0`);
 }
 
+/** Súng chung (đưa vào loadout / rơi / kho): không thuộc cung và không phải súng của quái. */
+export function isGeneralGun(g: GunStats): boolean {
+  return g.sign === null && (g.tier === undefined || g.tier === "thuong" || g.tier === "hiem");
+}
+
 export function validateGameData(d: GameData): void {
   const s = d.settings;
   for (const k of ["movePhaseSeconds", "aimPhaseSeconds", "contactRadiusTiles", "monsterRespawnSeconds", "worldTickHz"] as const) {
@@ -394,6 +420,20 @@ export function validateGameData(d: GameData): void {
     if (!g) throw new Error(`súng chung "${id}" không có trong sung.json`);
     if (g.sign !== null) throw new Error(`súng chung "${id}" phải có sign null`);
   }
+  if (!Number.isInteger(d.character.extraGunSlots) || d.character.extraGunSlots < 0) {
+    throw new Error("character.extraGunSlots: phải là số nguyên ≥ 0");
+  }
+  for (const id of d.character.startingOwnedGunIds) {
+    const g = d.guns[id];
+    if (!g) throw new Error(`súng khởi đầu "${id}" không có trong sung.json`);
+    if (!isGeneralGun(g)) throw new Error(`súng khởi đầu "${id}" phải là súng chung`);
+  }
+  for (const id of d.character.commonGunIds) {
+    if (!d.character.startingOwnedGunIds.includes(id)) throw new Error(`loadout mặc định "${id}" không nằm trong startingOwnedGunIds`);
+  }
+  if (d.character.commonGunIds.length > d.character.extraGunSlots) {
+    throw new Error("loadout mặc định nhiều hơn extraGunSlots");
+  }
   if (d.character.energyMax < d.character.energyStart || d.character.energyStart < 0) {
     throw new Error("character: energyStart phải nằm trong [0, energyMax]");
   }
@@ -415,6 +455,14 @@ export function validateGameData(d: GameData): void {
       throw new Error(`${w}: shower cần count và spreadTiles`);
     }
     if (g.kind === "self" && !g.selfEffect) throw new Error(`${w}: self cần selfEffect`);
+    if (g.kind === "spread" && (!g.angleOffsets || g.angleOffsets.length < 1)) throw new Error(`${w}: spread cần angleOffsets`);
+    if (g.kind === "beam" && !((g.beamLengthTiles ?? 0) > 0 && (g.pierceTiles ?? -1) >= 0)) {
+      throw new Error(`${w}: beam cần beamLengthTiles > 0 và pierceTiles ≥ 0`);
+    }
+    if (g.zone && !(g.zone.radiusTiles > 0 && g.zone.turns >= 1)) throw new Error(`${w}: zone cần radiusTiles > 0 và turns ≥ 1`);
+    if (g.chain && !(g.chain.maxTargets >= 1 && g.chain.radiusTiles > 0 && g.chain.falloff >= 0)) {
+      throw new Error(`${w}: chain không hợp lệ`);
+    }
   }
 
   for (const m of Object.values(d.monsters)) {
@@ -428,6 +476,12 @@ export function validateGameData(d: GameData): void {
     }
     if (!Number.isInteger(m.moveRangeTiles) || m.moveRangeTiles < 0) {
       throw new Error(`${w}: moveRangeTiles phải là số nguyên ≥ 0`);
+    }
+    for (const dr of m.drops) {
+      const g = d.guns[dr.gunId];
+      if (!g) throw new Error(`${w}: súng rơi "${dr.gunId}" không có`);
+      if (!isGeneralGun(g)) throw new Error(`${w}: súng rơi "${dr.gunId}" phải là súng chung`);
+      if (!(dr.chance >= 0 && dr.chance <= 1)) throw new Error(`${w}: chance của "${dr.gunId}" phải trong [0, 1]`);
     }
     positive(m.hp, `${w}.hp`);
     positive(m.worldSpeedTilesPerSec, `${w}.worldSpeedTilesPerSec`);

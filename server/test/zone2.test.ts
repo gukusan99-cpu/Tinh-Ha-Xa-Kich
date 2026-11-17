@@ -154,7 +154,7 @@ function matchHarness(monsterId: string, turnSeed = 777) {
       isConnected: () => true,
     },
     monster: data.monsters[monsterId]!,
-    settle: async (): Promise<Character> => ({ name: "Bob", sign: "xu_nu", level: 1, exp: 0, gunId: "g", pvp: { wins: 0, losses: 0, draws: 0 } }),
+    settle: async () => ({ character: { name: "Bob", sign: "xu_nu", level: 1, exp: 0, gunId: "g", ownedGunIds: ["thuoc_no_nho"], loadout: ["thuoc_no_nho"], pvp: { wins: 0, losses: 0, draws: 0 } } as Character, drops: [] }),
     onDone: () => {},
   });
   return { data, match, sent, of: (t: string) => sent.filter((m) => m.type === t) };

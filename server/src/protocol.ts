@@ -1,5 +1,5 @@
 /** Giao thức Giai đoạn 0 + 1 + 2 (xem docs/06-kien-truc.md, docs/08-thach-dau.md). */
-import type { Status, TurnResult } from "./battle/types.js";
+import type { Status, TurnResult, ZoneInfo } from "./battle/types.js";
 
 export const PROTOCOL_VERSION = 1;
 export const MAX_MESSAGE_BYTES = 4096;
@@ -12,6 +12,8 @@ const MAX_ABS_ANGLE = 360;
 const MAX_ABS_COORD = 1e6;
 const MAX_GUN_ID_LENGTH = 64;
 const MAX_ID_LENGTH = 64;
+/** Giới hạn thô số phần tử của set_loadout; số ô thật do máy chủ kiểm theo dữ liệu. */
+const MAX_LOADOUT_IDS = 16;
 
 export type ErrorCode =
   | "bad_json"
@@ -116,6 +118,12 @@ export interface ChallengeCancelMessage {
   type: "challenge_cancel";
   challengeId: string;
 }
+/** Đổi súng chung mang theo (chỉ trong thành, docs/10). */
+export interface SetLoadoutMessage {
+  v: 1;
+  type: "set_loadout";
+  gunIds: string[];
+}
 export type ClientMessage =
   | HelloMessage
   | PingMessage
@@ -129,7 +137,8 @@ export type ClientMessage =
   | AimPreviewMessage
   | ChallengeMessage
   | ChallengeReplyMessage
-  | ChallengeCancelMessage;
+  | ChallengeCancelMessage
+  | SetLoadoutMessage;
 
 // ---------- S→C ----------
 
@@ -139,6 +148,10 @@ export interface Character {
   level: number;
   exp: number;
   gunId: string;
+  /** Kho súng chung đã có (không trùng). */
+  ownedGunIds: string[];
+  /** Súng chung đang mang (tối đa extraGunSlots, đều nằm trong kho). */
+  loadout: string[];
   /** Thành tích thách đấu (docs/08). */
   pvp: { wins: number; losses: number; draws: number };
 }
@@ -252,6 +265,8 @@ export interface PhaseMessage {
   deadline: number;
   serverTime: number;
   units: UnitPhaseState[];
+  /** Vũng đang tồn tại (active=false: cảnh báo, chưa gây độc). */
+  zones: ZoneInfo[];
 }
 export interface AimPreviewResultMessage {
   v: 1;
@@ -271,6 +286,8 @@ export interface MatchEndMessage {
   matchId: string;
   result: "win" | "lose" | "draw";
   rewards: { exp: number };
+  /** Súng mới nhận (đã có thì không tính); PvP luôn rỗng. */
+  drops: string[];
   character: Character;
 }
 export interface ChallengeSentMessage {
@@ -409,6 +426,12 @@ export function parseClientMessage(raw: string | Buffer): ParseResult {
       const challengeId = obj.challengeId;
       if (!isId(challengeId)) return bad();
       return { ok: true, message: { v: 1, type: "challenge_cancel", challengeId } };
+    }
+    case "set_loadout": {
+      const ids = obj.gunIds;
+      if (!Array.isArray(ids) || ids.length > MAX_LOADOUT_IDS) return bad();
+      for (const g of ids) if (typeof g !== "string" || g === "" || g.length > MAX_GUN_ID_LENGTH) return bad();
+      return { ok: true, message: { v: 1, type: "set_loadout", gunIds: ids as string[] } };
     }
     default:
       return fail("unknown_type");

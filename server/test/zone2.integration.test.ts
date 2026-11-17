@@ -51,7 +51,7 @@ describe("tích hợp: cổng khóa cấp và vùng săn 2", () => {
       exp: 0,
       gunId: "thuoc_no_nho",
       pvp: { wins: 0, losses: 0, draws: 0 },
-    });
+    } as never); // nhân vật lưu từ phiên bản cũ: thiếu ownedGunIds/loadout, được điền mặc định khi đăng nhập
     server = await createServer({ port: 0, clock: scaledClock(20), data: testData(), store });
     const c = await open();
     c.send({ type: "login", username: "lvl2hero", password: "secret1" });

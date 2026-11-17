@@ -60,6 +60,8 @@ function harness(tweak: (d: GameData) => void = () => {}, signA = "xu_nu", signB
         level: 1,
         exp: 0,
         gunId: "g",
+        ownedGunIds: ["thuoc_no_nho"],
+        loadout: ["thuoc_no_nho"],
         pvp: { wins: results[i] === "win" ? 1 : 0, losses: results[i] === "lose" ? 1 : 0, draws: results[i] === "draw" ? 1 : 0 },
       });
       return [mk("An", signA, 0), mk("Bình", signB, 1)];

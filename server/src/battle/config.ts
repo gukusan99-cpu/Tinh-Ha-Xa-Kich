@@ -25,6 +25,8 @@ const CONFIG_KEYS = [
   "burnMaxTurns",
   "stunMaxTurns",
   "slowMaxTurns",
+  "poisonMaxTurns",
+  "rootMaxTurns",
 ] as const;
 
 const SIGN_IDS: readonly string[] = ["bach_duong", "kim_nguu", "xu_nu", "bao_binh"];
@@ -74,7 +76,7 @@ export function loadGuns(): Record<string, GunStats> {
       throw new Error(`${w}: "sign" phải là null hoặc một cung hợp lệ`);
     }
     const kind = g["kind"];
-    if (kind !== "projectile" && kind !== "burst" && kind !== "shower" && kind !== "self") {
+    if (kind !== "projectile" && kind !== "burst" && kind !== "shower" && kind !== "self" && kind !== "spread" && kind !== "beam") {
       throw new Error(`${w}: "kind" không hợp lệ`);
     }
     const gun: GunStats = {
@@ -86,7 +88,20 @@ export function loadGuns(): Record<string, GunStats> {
       energyCost: finite(g, "energyCost", w),
       cooldownTurns: finite(g, "cooldownTurns", w),
     };
-    if (kind === "burst") {
+    const tang = g["tang"];
+    if (tang === "thuong" || tang === "hiem" || tang === "cung" || tang === "quai") gun.tier = tang;
+    if (kind === "spread") {
+      const offs = g["angleOffsets"];
+      if (!Array.isArray(offs) || offs.length < 1 || offs.some((x) => typeof x !== "number" || !Number.isFinite(x))) {
+        throw new Error(`${w}: "angleOffsets" phải là mảng số không rỗng`);
+      }
+      gun.angleOffsets = offs as number[];
+      gun.count = offs.length;
+      if (g["count"] !== undefined && g["count"] !== offs.length) throw new Error(`${w}: "count" phải bằng độ dài angleOffsets`);
+    } else if (kind === "beam") {
+      gun.beamLengthTiles = finite(g, "beamLengthTiles", w);
+      gun.pierceTiles = finite(g, "pierceTiles", w);
+    } else if (kind === "burst") {
       gun.count = finite(g, "count", w);
       const offs = g["powerOffsets"];
       if (!Array.isArray(offs) || offs.length !== gun.count || offs.some((x) => typeof x !== "number" || !Number.isFinite(x))) {
@@ -112,6 +127,26 @@ export function loadGuns(): Record<string, GunStats> {
     }
     if (g["stun"] !== undefined) {
       gun.stun = { turns: finite(obj(g["stun"], `${w}.stun`), "turns", `${w}.stun`) };
+    }
+    if (g["root"] !== undefined) gun.root = { turns: finite(obj(g["root"], `${w}.root`), "turns", `${w}.root`) };
+    const mp = optNum(g, "maxPower", w);
+    if (mp !== undefined) gun.maxPower = mp;
+    if (g["zone"] !== undefined) {
+      const z = obj(g["zone"], `${w}.zone`);
+      const p = obj(z["poison"], `${w}.zone.poison`);
+      gun.zone = {
+        radiusTiles: finite(z, "radiusTiles", `${w}.zone`),
+        turns: finite(z, "turns", `${w}.zone`),
+        poison: { turns: finite(p, "turns", `${w}.zone.poison`), damagePerTurn: finite(p, "damagePerTurn", `${w}.zone.poison`) },
+      };
+    }
+    if (g["chain"] !== undefined) {
+      const c = obj(g["chain"], `${w}.chain`);
+      gun.chain = {
+        maxTargets: finite(c, "maxTargets", `${w}.chain`),
+        radiusTiles: finite(c, "radiusTiles", `${w}.chain`),
+        falloff: finite(c, "falloff", `${w}.chain`),
+      };
     }
     const kb = optNum(g, "knockbackTiles", w);
     if (kb !== undefined) gun.knockbackTiles = kb;

@@ -101,7 +101,15 @@ export interface AccountRules {
   signs: string[];
   startingGunId: string;
   expPerLevel: number;
+  /** Kho khởi đầu và loadout mặc định của nhân vật mới (và của nhân vật cũ thiếu trường). */
+  startingOwnedGunIds: string[];
+  defaultLoadout: string[];
+  extraGunSlots: number;
+  /** Súng được phép mang (súng chung, không phải súng cung/quái). */
+  loadoutGunIds: string[];
 }
+
+export type SetLoadoutResult = { ok: true; character: Character } | { ok: false };
 
 export type RegisterResult = { ok: true; account: AccountRecord } | { ok: false; code: AuthErrorCode };
 export type CharacterResult = { ok: true; character: Character } | { ok: false; code: "exists" | "invalid" };
@@ -129,9 +137,24 @@ export class AccountService {
       return { ok: false, code: "bad_credentials" };
     }
     if (!(await verifyPassword(password, account.passwordHash))) return { ok: false, code: "bad_credentials" };
-    // nhân vật lưu trước khi có thành tích PvP: mặc định bằng 0
-    if (account.character && !account.character.pvp) account.character.pvp = { wins: 0, losses: 0, draws: 0 };
+    if (account.character) account.character = this.normalize(account.character);
     return { ok: true, account };
+  }
+
+  /** Nhân vật lưu từ phiên bản cũ thiếu trường: điền mặc định (pvp, kho súng, loadout). */
+  private normalize(c: Character): Character {
+    const raw = c as Partial<Character> & Character;
+    return {
+      ...c,
+      pvp: raw.pvp ?? { wins: 0, losses: 0, draws: 0 },
+      ownedGunIds: raw.ownedGunIds ? [...raw.ownedGunIds] : [...this.rules.startingOwnedGunIds],
+      loadout: raw.loadout ? [...raw.loadout] : [...this.rules.defaultLoadout],
+    };
+  }
+
+  private async load(username: string): Promise<Character | null> {
+    const account = await this.store.find(username);
+    return account?.character ? this.normalize(account.character) : null;
   }
 
   async createCharacter(username: string, rawName: string, sign: string): Promise<CharacterResult> {
@@ -143,6 +166,8 @@ export class AccountService {
       level: 1,
       exp: 0,
       gunId: this.rules.startingGunId,
+      ownedGunIds: [...this.rules.startingOwnedGunIds],
+      loadout: [...this.rules.defaultLoadout],
       pvp: { wins: 0, losses: 0, draws: 0 },
     };
     if (!(await this.store.createCharacter(username, character))) return { ok: false, code: "exists" };
@@ -151,23 +176,53 @@ export class AccountService {
 
   /** Cộng exp, lưu và trả nhân vật mới; null nếu không có tài khoản/nhân vật. */
   async awardExp(username: string, gain: number): Promise<Character | null> {
-    const account = await this.store.find(username);
-    if (!account?.character) return null;
-    const next = applyExp(account.character, gain, this.rules.expPerLevel);
+    const c = await this.load(username);
+    if (!c) return null;
+    const next = applyExp(c, gain, this.rules.expPerLevel);
     await this.store.saveCharacter(username, next);
     return next;
   }
 
   /** Ghi một kết quả thách đấu vào thành tích; không đổi exp. Null nếu không có tài khoản/nhân vật. */
   async recordPvp(username: string, result: "win" | "lose" | "draw"): Promise<Character | null> {
-    const account = await this.store.find(username);
-    if (!account?.character) return null;
-    const pvp = { ...(account.character.pvp ?? { wins: 0, losses: 0, draws: 0 }) };
+    const c = await this.load(username);
+    if (!c) return null;
+    const pvp = { ...c.pvp };
     if (result === "win") pvp.wins++;
     else if (result === "lose") pvp.losses++;
     else pvp.draws++;
-    const next: Character = { ...account.character, pvp };
+    const next: Character = { ...c, pvp };
     await this.store.saveCharacter(username, next);
     return next;
+  }
+
+  /** Thêm súng rơi vào kho; trả nhân vật mới và danh sách súng thực sự mới (theo thứ tự, không trùng). */
+  async awardDrops(username: string, gunIds: string[]): Promise<{ character: Character; newGunIds: string[] } | null> {
+    const c = await this.load(username);
+    if (!c) return null;
+    const have = new Set(c.ownedGunIds);
+    const newGunIds: string[] = [];
+    for (const id of gunIds) {
+      if (have.has(id)) continue;
+      have.add(id);
+      newGunIds.push(id);
+    }
+    const next: Character = { ...c, ownedGunIds: [...c.ownedGunIds, ...newGunIds] };
+    if (newGunIds.length > 0) await this.store.saveCharacter(username, next);
+    return { character: next, newGunIds };
+  }
+
+  /** Đặt loadout: không trùng, tối đa extraGunSlots, đều trong kho và là súng chung. */
+  async setLoadout(username: string, gunIds: string[]): Promise<SetLoadoutResult> {
+    const c = await this.load(username);
+    if (!c) return { ok: false };
+    const ok =
+      gunIds.length <= this.rules.extraGunSlots &&
+      new Set(gunIds).size === gunIds.length &&
+      gunIds.every((id) => c.ownedGunIds.includes(id) && this.rules.loadoutGunIds.includes(id));
+    if (!ok) return { ok: false };
+    const next: Character = { ...c, loadout: [...gunIds] };
+    await this.store.saveCharacter(username, next);
+    return { ok: true, character: next };
   }
 }

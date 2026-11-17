@@ -33,9 +33,10 @@ function harness(tweak: (d: GameData) => void = () => {}, sign = "xu_nu", turnSe
       isConnected: () => state.connected,
     },
     monster,
-    settle: async (outcome, exp): Promise<Character> => {
+    settle: async (outcome, exp) => {
       state.settled.push([outcome, exp]);
-      return { name: "Bob", sign: "xu_nu", level: 1, exp, gunId: "g", pvp: { wins: 0, losses: 0, draws: 0 } };
+      const character: Character = { name: "Bob", sign: "xu_nu", level: 1, exp, gunId: "g", ownedGunIds: ["thuoc_no_nho"], loadout: ["thuoc_no_nho"], pvp: { wins: 0, losses: 0, draws: 0 } };
+      return { character, drops: [] };
     },
     onDone: () => {
       state.done = true;

@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { AccountService, MemoryAccountStore, type AccountStore } from "./accounts.js";
 import { realClock, type Clock } from "./clock.js";
-import { loadGameData, type GameData, type Settings } from "./data.js";
+import { isGeneralGun, loadGameData, type GameData, type Settings } from "./data.js";
 import { ChallengeBook, type Challenge } from "./challenges.js";
 import { Match, type MatchResult } from "./match.js";
 import {
@@ -41,6 +41,8 @@ export interface ServerOptions {
   store?: AccountStore;
   random?: () => number;
   seed?: () => number;
+  /** Nguồn ngẫu nhiên [0,1) cho súng rơi; mặc định crypto. */
+  dropRandom?: () => number;
 }
 
 export interface GameServer {
@@ -99,6 +101,10 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
     signs: data.character.signs,
     startingGunId: data.character.commonGunIds[0]!,
     expPerLevel: data.character.expPerLevel,
+    startingOwnedGunIds: data.character.startingOwnedGunIds,
+    defaultLoadout: data.character.commonGunIds,
+    extraGunSlots: data.character.extraGunSlots,
+    loadoutGunIds: Object.values(data.guns).filter(isGeneralGun).map((g) => g.id),
   });
 
   const sessionsByKey = new Map<string, Session>();
@@ -185,6 +191,7 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
       name: latest[i]!.name,
       sign: latest[i]!.sign,
       gunId: latest[i]!.gunId,
+      loadout: [...latest[i]!.loadout],
       send: (m: ServerMessage) => send(s.ws, m),
       isConnected: () => !s.closed && s.ws.readyState === s.ws.OPEN,
     });
@@ -232,13 +239,23 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
         name: s.character.name,
         sign: s.character.sign,
         gunId: s.character.gunId,
+        loadout: [...s.character.loadout],
         send: (m) => send(s.ws, m),
         isConnected: () => !s.closed && s.ws.readyState === s.ws.OPEN,
       },
       monster: def,
-      settle: async (_result, exp) => {
+      dropRandom: opts.dropRandom,
+      settle: async (_result, exp, rolled) => {
         latest = (await accounts.awardExp(username, exp)) ?? latest;
-        return latest;
+        let drops: string[] = [];
+        if (rolled.length > 0) {
+          const r = await accounts.awardDrops(username, rolled);
+          if (r) {
+            latest = r.character;
+            drops = r.newGunIds;
+          }
+        }
+        return { character: latest, drops };
       },
       onDone: () => {
         matches.delete(match);
@@ -382,6 +399,17 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
         if (!c || c.fromKey !== s.key) return fail("not_allowed"); // chỉ người mời
         challenges.close(c.id, "cancelled");
         announceClosed(c, "cancelled");
+        return;
+      }
+      case "set_loadout": {
+        // chỉ khi đang đứng trong thành (không trong trận, không ở vùng săn)
+        const me = s.entityId !== null ? world.getPlayer(s.entityId) : undefined;
+        if (!me || s.username === null || !s.character || !inCity(me)) return fail("not_allowed");
+        const res = await accounts.setLoadout(s.username, msg.gunIds);
+        if (s.closed) return;
+        if (!res.ok) return fail("not_allowed");
+        s.character = res.character;
+        send(s.ws, { v: PROTOCOL_VERSION, type: "character", character: res.character });
         return;
       }
       case "battle_move": {

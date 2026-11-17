@@ -14,11 +14,12 @@ import {
   outcome,
   probeShot,
   resolveShots,
+  traceBeam,
   validateShot,
   winnerTeam,
 } from "../battle/engine.js";
 import type { BattleConfig, BattleState, GunStats, MoveCommand, ShotCommand, SignId, TurnResult, Unit } from "../battle/types.js";
-import { loadGameData, type GameData } from "../data.js";
+import { isGeneralGun, loadGameData, type GameData } from "../data.js";
 
 export type Policy = "gioi" | "ngau_nhien" | "trung_binh";
 export const POLICIES: Policy[] = ["gioi", "trung_binh", "ngau_nhien"];
@@ -49,6 +50,8 @@ export interface SimOptions {
   seed: number;
   /** Cung của bot; bỏ trống = chỉ súng chung, không nội tại. */
   sign?: string;
+  /** Súng chung mang theo (toàn bộ loadout, thay mặc định `commonGunIds`); kiểm như set_loadout. */
+  loadout?: string[];
   /** Mặc định: quái đầu tiên trong data/quai.json. */
   monsterId?: string;
   overrides?: Overrides;
@@ -62,6 +65,17 @@ export interface SimResult {
   turns: number;
   playerHpLeft: number;
   monstersKilled: number;
+}
+
+/** Kiểm loadout như máy chủ: súng chung có thật, không trùng, tối đa extraGunSlots. Trả bản sao. */
+export function checkLoadout(data: GameData, loadout: string[]): string[] {
+  if (loadout.length > data.character.extraGunSlots) throw new Error(`loadout quá ${data.character.extraGunSlots} ô: ${loadout.join(",")}`);
+  if (new Set(loadout).size !== loadout.length) throw new Error(`loadout trùng súng: ${loadout.join(",")}`);
+  for (const id of loadout) {
+    const g = data.guns[id];
+    if (!g || !isGeneralGun(g)) throw new Error(`loadout: "${id}" không phải súng chung`);
+  }
+  return [...loadout];
 }
 
 let cached: GameData | null = null;
@@ -110,7 +124,8 @@ function probeTable(state: BattleState, me: Unit, cfg: BattleConfig): Probe[] {
 function proxyScore(state: BattleState, me: Unit, gun: GunStats, p: Probe, cfg: BattleConfig): number {
   const imp = p.impact!;
   const reach = gun.kind === "shower" ? gun.blastRadiusTiles + (gun.spreadTiles ?? 0) : gun.blastRadiusTiles;
-  const scale = gun.kind === "shower" ? (gun.count ?? 1) * 0.5 : gun.kind === "burst" ? (gun.count ?? 1) : 1;
+  const scale =
+    gun.kind === "shower" ? (gun.count ?? 1) * 0.5 : gun.kind === "burst" ? (gun.count ?? 1) : gun.kind === "spread" ? (gun.count ?? 1) * 0.6 : 1;
   let s = 0;
   for (const u of state.units) {
     if (!u.alive) continue;
@@ -134,7 +149,15 @@ function evalCmd(state: BattleState, me: Unit, cmd: ShotCommand, guns: Record<st
       if (before.id === me.id && after.hp <= 0) v -= 1000;
     } else {
       v += lost;
-      for (const s of after.statuses) if (s.type === "burn" && after.hp > 0) v += s.turns * s.damagePerTurn;
+      for (const s of after.statuses) if ((s.type === "burn" || s.type === "poison") && after.hp > 0) v += s.turns * s.damagePerTurn;
+    }
+  }
+  // vũng độc mới: địch đang đứng trong vũng sẽ chịu độc (chiết khấu 0.5 vì có thể bước ra)
+  for (const z of r.state.zones) {
+    if (z.team !== me.team || z.id < state.nextZoneId) continue;
+    for (const u of r.state.units) {
+      if (!u.alive || u.team === me.team) continue;
+      if (Math.hypot(u.col + 0.5 - z.x, u.y - cfg0.unitRadiusTiles - z.y) <= z.radius) v += 0.5 * z.poison.damagePerTurn * z.turnsLeft;
     }
   }
   return v - guns[cmd.gunId]!.energyCost * ENERGY_PRICE;
@@ -157,8 +180,27 @@ function bestAttack(
 ): Pick | null {
   let best: Pick | null = null;
   for (const gun of usable) {
-    if (gun.kind === "self" || gun.damage <= 0) continue;
+    if (gun.kind === "self" || (gun.damage <= 0 && !gun.root && !gun.zone)) continue;
+    if (gun.kind === "beam") {
+      const cands: { angle: number; facing: -1 | 1; s: number }[] = [];
+      const facings = new Set(table.map((p) => p.facing));
+      if (facings.size === 0) facings.add(me.facing);
+      for (const facing of facings) {
+        for (let angle = cfg.aimAngleMinDegrees; angle <= cfg.aimAngleMaxDegrees; angle += cfg.aiAngleStepDegrees) {
+          const tr = traceBeam(state, me, gun, angle, facing, 0, cfg);
+          if (tr.hits.length > 0) cands.push({ angle, facing, s: tr.hits.length });
+        }
+      }
+      cands.sort((a, b) => b.s - a.s);
+      for (const c of cands.slice(0, TOP_CANDIDATES)) {
+        const cmd: ShotCommand = { unitId: me.id, angle: c.angle, power: 50, facing: c.facing, gunId: gun.id, aimElapsedSeconds: elapsed };
+        const value = evalCmd(state, me, cmd, guns, cfg0);
+        if (!best || value > best.value) best = { cmd, value };
+      }
+      continue;
+    }
     const ranked = table
+      .filter((p) => gun.maxPower === undefined || p.power <= gun.maxPower)
       .map((p) => ({ p, s: proxyScore(state, me, gun, p, cfg) }))
       .sort((a, b) => b.s - a.s)
       .slice(0, TOP_CANDIDATES);
@@ -260,6 +302,7 @@ export function simulateMatch(opts: SimOptions): SimResult {
   const signDef = opts.sign !== undefined ? ch.signDefs[opts.sign] : undefined;
   if (opts.sign !== undefined && !signDef) throw new Error(`cung không có trong dữ liệu: ${opts.sign}`);
 
+  const loadout = opts.loadout !== undefined ? checkLoadout(data, opts.loadout) : [...ch.commonGunIds];
   // giống Match: người chơi id 1, quái id 2..; cột xuất phát theo map
   const units: Omit<Unit, "y" | "alive">[] = [
     {
@@ -272,7 +315,7 @@ export function simulateMatch(opts: SimOptions): SimResult {
       maxHp: baseHp,
       facing: 1,
       gunId: ch.commonGunIds[0]!,
-      guns: [...(signDef?.gunIds ?? []), ...ch.commonGunIds],
+      guns: [...(signDef?.gunIds ?? []), ...loadout],
       sign: (signDef?.id ?? null) as SignId | null,
       passive: signDef?.passive ?? null,
       energy: ch.energyStart,
@@ -385,6 +428,7 @@ export function runMany(
   baseSeed = 1,
   sign?: string,
   monsterId?: string,
+  loadout?: string[],
 ): Summary {
   let win = 0;
   let lose = 0;
@@ -392,7 +436,7 @@ export function runMany(
   let turns = 0;
   let hpWin = 0;
   for (let i = 0; i < n; i++) {
-    const r = simulateMatch({ policy, seed: (baseSeed + i * 7919) >>> 0, overrides, sign, monsterId });
+    const r = simulateMatch({ policy, seed: (baseSeed + i * 7919) >>> 0, overrides, sign, monsterId, loadout });
     turns += r.turns;
     if (r.outcome === "win") {
       win++;
@@ -412,6 +456,9 @@ export interface PvpOptions {
   /** true: A đứng đội 1 (bên phải), B đội 0. Đổi bên để loại bỏ thiên vị của bản đồ. */
   swap: boolean;
   data?: GameData;
+  /** Loadout đầy đủ của A / B (mặc định commonGunIds). */
+  loadoutA?: string[];
+  loadoutB?: string[];
 }
 export interface PvpResult {
   winner: "a" | "b" | "draw";
@@ -433,6 +480,10 @@ export function simulatePvpMatch(opts: PvpOptions): PvpResult {
   const maxTurns = data.settings.pvpMaxTurns;
 
   const signOf = (team: 0 | 1): string => ((team === 0) !== opts.swap ? opts.signA : opts.signB);
+  const loadoutOf = (team: 0 | 1): string[] => {
+    const l = (team === 0) !== opts.swap ? opts.loadoutA : opts.loadoutB;
+    return l !== undefined ? checkLoadout(data, l) : [...ch.commonGunIds];
+  };
   const mk = (id: number, team: 0 | 1, col: number): Omit<Unit, "y" | "alive"> => {
     const def = ch.signDefs[signOf(team)]!;
     return {
@@ -445,7 +496,7 @@ export function simulatePvpMatch(opts: PvpOptions): PvpResult {
       maxHp: ch.baseHp,
       facing: team === 0 ? 1 : -1,
       gunId: ch.commonGunIds[0]!,
-      guns: [...def.gunIds, ...ch.commonGunIds],
+      guns: [...def.gunIds, ...loadoutOf(team)],
       sign: def.id,
       passive: def.passive,
       energy: ch.energyStart,
@@ -500,13 +551,20 @@ export function pvpPairs(signs: string[]): [string, string][] {
 }
 
 /** n trận giữa a và b; trận lẻ đổi bên (A đứng bên phải). */
-export function runPvpPair(a: string, b: string, n: number, baseSeed = 1, data?: GameData): PvpPairSummary {
+export function runPvpPair(
+  a: string,
+  b: string,
+  n: number,
+  baseSeed = 1,
+  data?: GameData,
+  loadouts: { a?: string[]; b?: string[] } = {},
+): PvpPairSummary {
   const s: PvpPairSummary = { a, b, n, aWins: 0, bWins: 0, draws: 0, team0Wins: 0, swapped: 0, avgTurns: 0 };
   let turns = 0;
   for (let i = 0; i < n; i++) {
     const swap = i % 2 === 1;
     if (swap) s.swapped++;
-    const r = simulatePvpMatch({ signA: a, signB: b, seed: (baseSeed + i * 7919) >>> 0, swap, data });
+    const r = simulatePvpMatch({ signA: a, signB: b, seed: (baseSeed + i * 7919) >>> 0, swap, data, loadoutA: loadouts.a, loadoutB: loadouts.b });
     turns += r.turns;
     if (r.winner === "a") s.aWins++;
     else if (r.winner === "b") s.bWins++;
@@ -515,4 +573,42 @@ export function runPvpPair(a: string, b: string, n: number, baseSeed = 1, data?:
   }
   s.avgTurns = n > 0 ? turns / n : 0;
   return s;
+}
+
+// ---------- so sánh loadout (docs/10, mục Cân bằng) ----------
+
+export interface LoadoutCompareRow {
+  gunId: string;
+  win: number;
+  /** Chênh lệch tỉ lệ thắng so với loadout mặc định, đơn vị điểm phần trăm. */
+  deltaPoints: number;
+}
+export interface LoadoutCompare {
+  sign: string;
+  baseline: number;
+  rows: LoadoutCompareRow[];
+}
+
+/** Mọi súng chung ngoài loadout mặc định (thường + hiếm), theo thứ tự trong dữ liệu. */
+export function candidateGuns(data: GameData): string[] {
+  return Object.values(data.guns)
+    .filter((g) => isGeneralGun(g) && !data.character.commonGunIds.includes(g.id))
+    .map((g) => g.id);
+}
+
+/** Mỗi cung: PvE vs `monsterId` (mặc định am_thach_nho), loadout mặc định so với thêm từng súng chung. */
+export function compareLoadouts(
+  sign: string,
+  n: number,
+  policy: Policy = "trung_binh",
+  baseSeed = 1,
+  monsterId = "am_thach_nho",
+  data: GameData = getData(),
+): LoadoutCompare {
+  const base = runMany(policy, n, {}, baseSeed, sign, monsterId, [...data.character.commonGunIds]).win;
+  const rows = candidateGuns(data).map((gunId) => {
+    const win = runMany(policy, n, {}, baseSeed, sign, monsterId, [...data.character.commonGunIds, gunId]).win;
+    return { gunId, win, deltaPoints: (win - base) * 100 };
+  });
+  return { sign, baseline: base, rows };
 }

@@ -29,13 +29,17 @@ export interface BattleConfig {
   burnMaxTurns: number;
   stunMaxTurns: number;
   slowMaxTurns: number;
+  poisonMaxTurns: number;
+  rootMaxTurns: number;
 }
 
 /** Một dòng của data/sung.json (docs/07). */
 export interface GunStats {
   id: string;
   sign: SignId | null;
-  kind: "projectile" | "burst" | "shower" | "self";
+  /** Tầng trong data/sung.json ("tang"): thuong, hiem, cung, quai. */
+  tier?: "thuong" | "hiem" | "cung" | "quai";
+  kind: "projectile" | "burst" | "shower" | "self" | "spread" | "beam";
   damage: number;
   blastRadiusTiles: number;
   energyCost: number;
@@ -46,6 +50,19 @@ export interface GunStats {
   burn?: { turns: number; damagePerTurn: number };
   slow?: { turns: number; tiles: number };
   stun?: { turns: number };
+  /** Trói: không di chuyển ở pha di chuyển kế tiếp (docs/10). */
+  root?: { turns: number };
+  /** spread: số viên = angleOffsets.length; mỗi viên bắn tại angle + offset (độ). */
+  angleOffsets?: number[];
+  /** Trần lực bắn (spread, ...). */
+  maxPower?: number;
+  /** beam: độ dài tia và số ô đất tia xuyên qua được. */
+  beamLengthTiles?: number;
+  pierceTiles?: number;
+  /** Vũng độc tại điểm chạm (docs/10). */
+  zone?: { radiusTiles: number; turns: number; poison: { turns: number; damagePerTurn: number } };
+  /** Điện chuyền: khi trúng trực tiếp một đơn vị địch. */
+  chain?: { maxTargets: number; radiusTiles: number; falloff: number };
   knockbackTiles?: number;
   craterDepthTiles?: number;
   selfEffect?: { type: "shield"; amount: number } | { type: "trueAim"; turns: number };
@@ -64,6 +81,8 @@ export type Status =
   | { type: "burn"; turns: number; damagePerTurn: number }
   | { type: "slow"; turns: number; tiles: number }
   | { type: "stun"; turns: number }
+  | { type: "root"; turns: number }
+  | { type: "poison"; turns: number; damagePerTurn: number }
   | { type: "shield"; turns: number; amount: number } // amount = lượng còn lại
   | { type: "trueAim"; turns: number };
 
@@ -105,6 +124,38 @@ export interface BattleState {
   rows: string[];
   units: Unit[];
   turn: number; // bắt đầu từ 1
+  /** Vũng độc đang tồn tại (docs/10). */
+  zones: Zone[];
+  /** Id vũng kế tiếp (tăng đơn điệu). */
+  nextZoneId: number;
+}
+
+/** Vũng hiệu ứng kéo dài. active=false: mới tạo, chỉ cảnh báo; cuối lượt kế tiếp mới bắt đầu gây độc. */
+export interface Zone {
+  id: number;
+  ownerUnitId: number;
+  team: Team;
+  x: number;
+  y: number;
+  radius: number;
+  turnsLeft: number;
+  active: boolean;
+  poison: { turns: number; damagePerTurn: number };
+}
+/** Dạng gửi qua mạng. */
+export interface ZoneInfo {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  turnsLeft: number;
+  active: boolean;
+}
+export interface ChainHit {
+  fromUnitId: number;
+  toUnitId: number;
+  /** Sát thương thật sau khiên và giảm sát thương. */
+  amount: number;
 }
 
 export interface ShotCommand {
@@ -139,6 +190,8 @@ export interface ShotResult {
   hitUnitId: number | null;
   crit: boolean;
   flightSeconds: number;
+  /** Chỉ laser: đoạn tia (impact = điểm cuối nếu bị đất chặn, ngược lại null). */
+  beam?: { from: { x: number; y: number }; to: { x: number; y: number } };
 }
 
 export interface Explosion {
@@ -187,6 +240,12 @@ export interface TurnResult {
   falls: FallEvent[];
   /** Sát thương cháy cuối lượt. */
   burnTicks: DamageEvent[];
+  /** Sát thương độc cuối lượt (sau burnTicks). */
+  poisonTicks: DamageEvent[];
+  /** Điện chuyền (Dây điện), theo thứ tự nhảy. */
+  chainHits: ChainHit[];
+  /** Vũng đang tồn tại sau lượt (đã trừ lượt, bỏ vũng hết hạn). */
+  zones: ZoneInfo[];
   deaths: number[];
   /** Trạng thái mỗi đơn vị sau lượt (năng lượng đã cộng hồi cho lượt sau, hồi chiêu đã giảm). */
   units: { id: number; hp: number; energy: number; cooldowns: Record<string, number>; statuses: Status[] }[];

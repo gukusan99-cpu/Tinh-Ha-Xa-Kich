@@ -4,6 +4,10 @@
   "commonGunIds": [
     "thuoc_no_nho"
   ],
+  "startingOwnedGunIds": [
+    "thuoc_no_nho"
+  ],
+  "extraGunSlots": 2,
   "expPerLevel": 100,
   "energyStart": 3,
   "energyMax": 10,

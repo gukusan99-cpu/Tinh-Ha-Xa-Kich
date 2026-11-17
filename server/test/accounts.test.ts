@@ -7,7 +7,13 @@ import {
   verifyPassword,
 } from "../src/accounts.js";
 
-const rules = { signs: ["bach_duong", "kim_nguu", "xu_nu", "bao_binh"], startingGunId: "g", expPerLevel: 100 };
+const rules = { signs: ["bach_duong", "kim_nguu", "xu_nu", "bao_binh"], startingGunId: "g",
+  expPerLevel: 100,
+  startingOwnedGunIds: ["thuoc_no_nho"],
+  defaultLoadout: ["thuoc_no_nho"],
+  extraGunSlots: 2,
+  loadoutGunIds: ["thuoc_no_nho", "ba_tia", "lien_thanh", "laser"],
+};
 const mk = () => new AccountService(new MemoryAccountStore(), rules);
 
 describe("băm mật khẩu", () => {
@@ -52,7 +58,7 @@ describe("AccountService", () => {
     const c = await s.createCharacter("bob", "Sao Băng", "kim_nguu");
     expect(c).toEqual({
       ok: true,
-      character: { name: "Sao Băng", sign: "kim_nguu", level: 1, exp: 0, gunId: "g", pvp: { wins: 0, losses: 0, draws: 0 } },
+      character: { name: "Sao Băng", sign: "kim_nguu", level: 1, exp: 0, gunId: "g", ownedGunIds: ["thuoc_no_nho"], loadout: ["thuoc_no_nho"], pvp: { wins: 0, losses: 0, draws: 0 } },
     });
     expect(await s.createCharacter("bob", "Khác", "xu_nu")).toEqual({ ok: false, code: "exists" });
     const again = await s.login("bob", "secret1");
@@ -94,7 +100,7 @@ describe("recordPvp", () => {
 });
 
 describe("applyExp", () => {
-  const base = { name: "n", sign: "xu_nu", level: 1, exp: 0, gunId: "g", pvp: { wins: 0, losses: 0, draws: 0 } };
+  const base = { name: "n", sign: "xu_nu", level: 1, exp: 0, gunId: "g", ownedGunIds: ["thuoc_no_nho"], loadout: ["thuoc_no_nho"], pvp: { wins: 0, losses: 0, draws: 0 } };
   it("lên cấp khi exp ≥ expPerLevel × level, phần dư giữ lại", () => {
     expect(applyExp(base, 99, 100)).toMatchObject({ level: 1, exp: 99 });
     expect(applyExp(base, 100, 100)).toMatchObject({ level: 2, exp: 0 });

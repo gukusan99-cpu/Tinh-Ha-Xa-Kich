@@ -11,6 +11,7 @@ import {
   monsterMoveRng,
   previewShot,
   resolveShots,
+  zoneInfos,
   validateShot,
   winnerTeam,
 } from "./battle/engine.js";
@@ -24,6 +25,8 @@ export interface MatchPlayer {
   /** Cung của nhân vật; quyết định bộ súng và nội tại. */
   sign: string;
   gunId: string;
+  /** Súng chung đang mang (docs/10); thiếu thì dùng loadout mặc định của dữ liệu. */
+  loadout?: string[];
   send(msg: ServerMessage): void;
   isConnected(): boolean;
 }
@@ -42,8 +45,13 @@ export interface PveMatchParams extends BaseParams {
   mode?: "pve";
   player: MatchPlayer;
   monster: MonsterDef;
-  /** Cập nhật nhân vật theo kết quả; trả nhân vật mới để gửi trong match_end. */
-  settle(result: MatchResult, exp: number): Promise<Character>;
+  /** Súng rơi: mặc định lấy từ crypto; test truyền hàm [0,1) tất định. */
+  dropRandom?: () => number;
+  /**
+   * Cập nhật nhân vật theo kết quả; `rolled` là các súng bốc được (chỉ khi thắng, có thể trùng).
+   * Trả nhân vật mới và danh sách súng mới nhận (để gửi trong match_end).
+   */
+  settle(result: MatchResult, exp: number, rolled: string[]): Promise<{ character: Character; drops: string[] }>;
 }
 export interface PvpMatchParams extends BaseParams {
   mode: "pvp";
@@ -100,7 +108,7 @@ export class Match {
         maxHp: ch.baseHp,
         facing: team === 0 ? 1 : -1,
         gunId: who.gunId,
-        guns: [...(signDef?.gunIds ?? []), ...ch.commonGunIds],
+        guns: [...new Set([...(signDef?.gunIds ?? []), ...(who.loadout ?? ch.commonGunIds)])],
         sign: (signDef?.id ?? null) as SignId | null,
         passive: signDef?.passive ?? null,
         energy: ch.energyStart,
@@ -306,6 +314,7 @@ export class Match {
       deadline: now + secs * 1000,
       serverTime: now,
       units: this.phaseUnits(),
+      zones: zoneInfos(this.state),
     });
     this.cancel?.();
     this.cancel = this.p.clock.setTimeout(() => this.finishPhase(), secs * 1000);
@@ -398,6 +407,17 @@ export class Match {
     }, waitMs);
   }
 
+  /** Mỗi quái bị hạ quay một lần theo bảng rơi của nó: mỗi mục một lần bốc (docs/10). */
+  private rollDrops(p: PveMatchParams): string[] {
+    const rnd = p.dropRandom ?? cryptoRandom;
+    const out: string[] = [];
+    for (const u of this.state.units) {
+      if (u.team !== 1 || u.alive) continue;
+      for (const d of p.monster.drops) if (rnd() < d.chance) out.push(d.gunId);
+    }
+    return out;
+  }
+
   /** Đội thắng; trong PvE, người chơi chết thì thua kể cả khi quái chết cùng lượt. */
   private winner(): 0 | 1 | "draw" | null {
     const w = winnerTeam(this.state, this.maxTurns);
@@ -420,6 +440,7 @@ export class Match {
             matchId: p.id,
             result: results[i]!,
             rewards: { exp: 0 },
+            drops: [],
             character: characters[i]!,
           });
         });
@@ -427,13 +448,15 @@ export class Match {
         const result = resultOf(0);
         const exp =
           result === "win" ? this.state.units.filter((u) => u.team === 1).reduce((sum) => sum + p.monster.expReward, 0) : 0;
-        const character = await p.settle(result, exp);
+        const rolled = result === "win" ? this.rollDrops(p) : [];
+        const { character, drops } = await p.settle(result, exp, rolled);
         this.slots[0]!.player.send({
           v: PROTOCOL_VERSION,
           type: "match_end",
           matchId: p.id,
           result,
           rewards: { exp },
+          drops,
           character,
         });
       }
@@ -443,6 +466,11 @@ export class Match {
       this.p.onDone();
     }
   }
+}
+
+/** Số thực [0, 1) từ nguồn ngẫu nhiên mật mã (32 bit). */
+function cryptoRandom(): number {
+  return randomBytes(4).readUInt32BE(0) / 4294967296;
 }
 
 function randomSeed(): number {

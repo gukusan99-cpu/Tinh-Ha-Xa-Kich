@@ -71,9 +71,9 @@
   "pvpMaxTurns": 15,
   "pvpBattleMapId": "dau_truong_1",
   "portalLockedNoticeSeconds": 3,
+  "rootMaxTurns": 1,
   "chuaCoSo": [
     "burnDamagePerTurn",
-    "poisonDamagePerTurn",
     "meteorBurnDamagePerTurn",
     "meteorShowerStonesCurve",
     "rareGunEnergyCost",

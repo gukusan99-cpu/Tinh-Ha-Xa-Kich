@@ -10,7 +10,21 @@
       "worldSpeedTilesPerSec": 1.5,
       "battleMapId": "dong_am_thach_1",
       "groupSize": 2,
-      "moveRangeTiles": 0
+      "moveRangeTiles": 0,
+      "drops": [
+        {
+          "gunId": "ba_tia",
+          "chance": 0.15
+        },
+        {
+          "gunId": "lien_thanh",
+          "chance": 0.15
+        },
+        {
+          "gunId": "sung_hoi",
+          "chance": 0.15
+        }
+      ]
     },
     {
       "id": "am_thach_gai",
@@ -22,7 +36,29 @@
       "worldSpeedTilesPerSec": 2,
       "battleMapId": "hem_van_thach_1",
       "groupSize": 2,
-      "moveRangeTiles": 3
+      "moveRangeTiles": 3,
+      "drops": [
+        {
+          "gunId": "luoi_bang",
+          "chance": 0.06
+        },
+        {
+          "gunId": "phun_lua",
+          "chance": 0.06
+        },
+        {
+          "gunId": "to_nhen",
+          "chance": 0.06
+        },
+        {
+          "gunId": "ba_tia",
+          "chance": 0.1
+        },
+        {
+          "gunId": "lien_thanh",
+          "chance": 0.1
+        }
+      ]
     },
     {
       "id": "am_thach_lon",
@@ -34,7 +70,25 @@
       "worldSpeedTilesPerSec": 1,
       "battleMapId": "hem_van_thach_1",
       "groupSize": 1,
-      "moveRangeTiles": 0
+      "moveRangeTiles": 0,
+      "drops": [
+        {
+          "gunId": "laser",
+          "chance": 0.08
+        },
+        {
+          "gunId": "noc_doc",
+          "chance": 0.08
+        },
+        {
+          "gunId": "day_dien",
+          "chance": 0.08
+        },
+        {
+          "gunId": "sung_hoi",
+          "chance": 0.1
+        }
+      ]
     }
   ]
 }

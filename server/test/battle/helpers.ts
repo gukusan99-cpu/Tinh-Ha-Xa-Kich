@@ -22,6 +22,8 @@ export const CFG: BattleConfig = {
   burnMaxTurns: 2,
   stunMaxTurns: 1,
   slowMaxTurns: 1,
+  poisonMaxTurns: 2,
+  rootMaxTurns: 1,
 };
 
 export const GUNS: Record<string, GunStats> = {
