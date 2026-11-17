@@ -16,7 +16,8 @@ Cốt truyện đầy đủ sẽ được mở rộng sau bản thử nghiệm.
 | Nền tảng | Android và Web trước, PC sau, iOS để sau |
 | Engine | Godot 4 |
 | Máy chủ | TypeScript với Node.js, tự xây dựng |
-| Số cung bản thử nghiệm | 4 cung (đề xuất: Bạch Dương, Kim Ngưu, Xử Nữ, Bảo Bình) |
+| Số cung bản thử nghiệm | 4 cung: Bạch Dương, Kim Ngưu, Xử Nữ, Bảo Bình (chốt 2026-11-18) |
+| Đồng bộ lượt | Máy chủ gom lệnh, mô phỏng một lần, gửi kết quả kèm quỹ đạo (xem `06-kien-truc.md`, chốt 2026-11-18) |
 | Khóa cung | Khóa vĩnh viễn sau khi chọn. Đệ tử cung khác và kết hợp để sau |
 | PvP | Chỉ thách đấu trong thường ngày. Đánh tự do trong một số sự kiện |
 | Điều khiển | Cảm ứng cho bản thử nghiệm |
@@ -43,6 +44,4 @@ Cốt truyện đầy đủ sẽ được mở rộng sau bản thử nghiệm.
 5. **Giai đoạn 4:** sự kiện PvP, xuất bản Android, thêm PC.
 
 ## Câu hỏi còn mở
-- Xác nhận 4 cung của bản thử nghiệm.
 - Tên chính thức của game (hiện là tên tạm).
-- Mô hình đồng bộ lượt chi tiết (sẽ chốt trong `03-chien-dau-luot.md` sau khi thiết kế kiến trúc).

@@ -5,17 +5,17 @@ Người chơi chọn một cung khi tạo nhân vật. Lựa chọn này khóa 
 
 | Cung | Tính cách | Nội tại (passive) | Trong bản thử nghiệm |
 |---|---|---|---|
-| Bạch Dương | Liều lĩnh | Tăng sát thương ở đầu lượt | Có (đề xuất) |
-| Kim Ngưu | Vững chãi | Giảm sát thương nhận vào | Có (đề xuất) |
+| Bạch Dương | Liều lĩnh | Tăng sát thương ở đầu lượt | Có |
+| Kim Ngưu | Vững chãi | Giảm sát thương nhận vào | Có |
 | Song Tử | Linh hoạt | Thêm một lần đổi vị trí mỗi trận | Không |
 | Cự Giải | Kiên nhẫn | Ngắm lâu hơn để tăng sát thương | Không |
 | Sư Tử | Kiêu hãnh | Tăng hiệu ứng cháy lan | Không |
-| Xử Nữ | Tỉ mỉ | Tăng độ chính xác khi ngắm | Có (đề xuất) |
+| Xử Nữ | Tỉ mỉ | Tăng độ chính xác khi ngắm | Có |
 | Thiên Bình | Công bằng | Hoán đổi vị trí với đối thủ | Không |
 | Bọ Cạp | Âm thầm | Hiệu ứng độc kéo dài thêm một lượt | Không |
 | Nhân Mã | Tự do | Bắn xuyên một hàng quái | Không |
 | Ma Kết | Bền bỉ | Đẩy đối thủ ra khỏi vị trí | Không |
-| Bảo Bình | Sáng tạo | Pháo sao băng đẩy đối thủ xuống | Có (đề xuất) |
+| Bảo Bình | Sáng tạo | Pháo sao băng đẩy đối thủ xuống | Có |
 | Song Ngư | Thần bí | Hiệu ứng điện lan sang đối thủ gần | Không |
 
 ## Quy tắc súng theo cung

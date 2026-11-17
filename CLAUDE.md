@@ -17,7 +17,7 @@ Game online nhập vai có bắn theo lượt đồng thời. Người chơi đi
 6. **Mỗi thay đổi nhỏ là một commit riêng,** có thông điệp mô tả rõ thay đổi.
 
 ## Phạm vi bản thử nghiệm (hiện hành)
-- 4 cung mở: Bạch Dương, Kim Ngưu, Xử Nữ, Bảo Bình (đề xuất, chờ xác nhận).
+- 4 cung mở: Bạch Dương, Kim Ngưu, Xử Nữ, Bảo Bình (đã chốt).
 - Súng: thường và hiếm. Súng thần thoại để sau.
 - 1 thành, 2 vùng săn.
 - PvE theo lượt. PvP chỉ thách đấu, và đánh tự do trong sự kiện.
@@ -29,9 +29,8 @@ Game online nhập vai có bắn theo lượt đồng thời. Người chơi đi
 - Giai đoạn hiện tại được ghi trong `docs/05-tien-do.md`. Cập nhật file này khi xong mỗi giai đoạn.
 
 ## Lệnh thường dùng
-Trên máy này `godot` và `git` chưa có trong PATH:
-- Godot: `$godot = "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe"`
-- Git: `C:\Users\Admin\AppData\Local\GitHubDesktop\app-3.6.10\resources\app\git\cmd\git.exe` (git đi kèm GitHub Desktop)
+- Git: Git for Windows đã cài (`C:\Program Files\Git\cmd\git.exe`, có trong PATH hệ thống).
+- Godot chưa có trong PATH: `$godot = "$env:USERPROFILE\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe"`
 
 Máy chủ (chạy trong `server/`):
 - Cài: `npm install`
