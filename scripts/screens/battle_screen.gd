@@ -15,6 +15,7 @@ const SLIDE_SPEED := 6.0
 const FX_BUBBLE := 0.9
 
 var _bal := {}
+var _map_title := ""
 var _guns := {}         # id súng -> dữ liệu (chỉ hiển thị)
 var _energy_max := 10
 var _gun_id := ""
@@ -75,10 +76,18 @@ func setup(msg: Dictionary, balance: Dictionary) -> void:
 	_you = int(msg.get("you", -1))
 	_pvp = String(msg.get("mode", "pve")) == "pvp"
 	_max_turns = int(msg.get("maxTurns", 0))
+	var monsters := MapInfo.load_monsters()
+	var battle_map := String(msg.get("mapId", ""))
 	for u in msg.get("units", []):
 		var d: Dictionary = u
 		var id := int(d["id"])
+		var mid := ""
+		if String(d.get("kind", "")) == "monster":
+			mid = MapInfo.monster_id_by_name(monsters, String(d.get("name", "")))
+			if battle_map.is_empty() and not mid.is_empty():
+				battle_map = String(monsters[mid].get("battleMapId", ""))
 		_units[id] = {
+			"monsterId": mid,
 			"id": id, "name": String(d.get("name", "")), "team": int(d.get("team", 0)),
 			"col": int(d.get("col", 0)), "y": float(d.get("y", 0)),
 			"hp": int(d.get("hp", 0)), "maxHp": maxi(int(d.get("maxHp", 1)), 1),
@@ -89,6 +98,8 @@ func setup(msg: Dictionary, balance: Dictionary) -> void:
 			"guns": [], "energy": 0, "cooldowns": {}, "statuses": [],
 		}
 		GunInfo.apply_unit_state(_units[id], d)
+	if not _pvp and not battle_map.is_empty():
+		_map_title = MapInfo.map_name(battle_map, true)
 	_guns = GameData.load_guns()
 	var nv: Variant = GameData.load_json("res://data/nhan-vat.json")
 	if typeof(nv) == TYPE_DICTIONARY:
@@ -568,7 +579,7 @@ func _update_info() -> void:
 	var turn_txt := "Lượt %d" % _turn
 	if _max_turns > 0:
 		turn_txt += "/%d" % _max_turns
-	var txt := ("Thách đấu - " if _pvp else "") + turn_txt
+	var txt := ("Thách đấu - " if _pvp else "") + (_map_title + " - " if not _map_title.is_empty() else "") + turn_txt
 	if _mode == "replay":
 		txt += " - Đang phát lại"
 	elif _mode == "moves":
@@ -659,8 +670,12 @@ func _draw_unit(font: Font, u: Dictionary) -> void:
 	var center := _to_screen(feet + Vector2(0, -_radius))
 	var is_self: bool = u["id"] == _you
 	var col := Color(0.9, 0.25, 0.25) if _is_enemy(u) else (Color(0.3, 0.85, 1.0) if is_self else Color(0.4, 0.9, 0.5))
-	col.a = a
 	var rpx := _radius * _ts
+	if not String(u.get("monsterId", "")).is_empty() and _is_enemy(u):
+		var st := MapInfo.monster_style(String(u["monsterId"]))
+		col = st["color"]
+		rpx *= float(st["scale"])
+	col.a = a
 	draw_circle(center, rpx, col)
 	if is_self:
 		draw_arc(center, rpx + 2, 0, TAU, 24, Color(1, 1, 1, a), 2.0)

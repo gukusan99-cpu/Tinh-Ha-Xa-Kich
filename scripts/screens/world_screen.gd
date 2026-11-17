@@ -18,6 +18,8 @@ var _tap_pos := Vector2.ZERO
 var _tap_age := 99.0
 var _hint: Label
 var _has_state := false
+var _portals: Array = []   # {rect (ô), name, req}
+var _monsters := {}        # id quái -> dữ liệu (tên hiển thị)
 
 # Thách đấu (chỉ hiển thị + gửi ý định)
 var _sign_names := {}
@@ -40,6 +42,7 @@ func _ready() -> void:
 		_sign_names[String(s.get("id", ""))] = String(s.get("ten", ""))
 	var hz := float(GameData.load_balance().get("worldTickHz", 10))
 	_tick_dur = 1.0 / maxf(hz, 1.0)
+	_monsters = MapInfo.load_monsters()
 	_camera = Camera2D.new()
 	add_child(_camera)
 	_camera.make_current()
@@ -237,13 +240,31 @@ func apply_state(msg: Dictionary) -> void:
 	_tracks.clear()
 	_info.clear()
 	_has_state = true
+	_load_portals(msg)
 	_apply_entities(msg.get("entities", []), true)
 	if _hint != null:
 		_update_hint()
 
 
+## Cổng: ưu tiên world_state.portals nếu máy chủ gửi; không thì đọc tệp bản đồ (chỉ để hiển thị).
+func _load_portals(msg: Dictionary) -> void:
+	var list: Variant = msg.get("portals")
+	if typeof(list) != TYPE_ARRAY:
+		list = MapInfo.load_map(_map_id).get("portals", [])
+	_portals = []
+	for p in list:
+		if typeof(p) != TYPE_DICTIONARY:
+			continue
+		var to_id := String(p.get("toMapId", ""))
+		_portals.append({
+			"rect": Rect2(float(p.get("x", 0)), float(p.get("y", 0)), float(p.get("w", 1)), float(p.get("h", 1))),
+			"name": MapInfo.map_name(to_id),
+			"req": int(p.get("levelRequired", 0)),
+		})
+
+
 func _update_hint() -> void:
-	_hint.text = "Bản đồ: %s - chạm vào bản đồ để di chuyển" % _map_id
+	_hint.text = "Bản đồ: %s - chạm vào bản đồ để di chuyển" % MapInfo.map_name(_map_id)
 
 
 func on_tick(msg: Dictionary) -> void:
@@ -264,7 +285,7 @@ func _apply_entities(list: Array, snap: bool) -> void:
 		seen[id] = true
 		_info[id] = {
 			"kind": String(d.get("kind", "player")), "name": String(d.get("name", "")),
-			"sign": String(d.get("sign", "")), "level": int(d.get("level", 1)), "pvp": d.get("pvp"),
+			"sign": String(d.get("sign", "")), "monsterId": String(d.get("monsterId", "")), "level": int(d.get("level", 1)), "pvp": d.get("pvp"),
 		}
 		if _tracks.has(id) and not snap:
 			_tracks[id].push(p, now)
@@ -336,17 +357,37 @@ func _draw() -> void:
 				start = -1
 	var font := ThemeDB.fallback_font
 	var now := _now()
+	var my_level: int = int(_info.get(_you, {}).get("level", 1))
+	for pt in _portals:
+		var r: Rect2 = pt["rect"]
+		var locked := MapInfo.portal_is_locked(int(pt["req"]), my_level)
+		var px := Rect2(r.position * TILE, r.size * TILE)
+		draw_rect(px, Color(0.45, 0.2, 0.2, 0.7) if locked else Color(0.3, 0.5, 1.0, 0.7))
+		draw_rect(px, Color(1, 1, 1, 0.8), false, 2.0)
+		var c := px.position + Vector2(px.size.x / 2.0, 0)
+		var label := String(pt["name"])
+		if locked:
+			label += " (%s)" % UiText.portal_lock_tag(int(pt["req"]))
+		draw_string(font, c + Vector2(-100, -8), label, HORIZONTAL_ALIGNMENT_CENTER, 200, 14, Color(1, 0.8, 0.6) if locked else Color.WHITE)
 	for id in _tracks.keys():
 		var p: Vector2 = _tracks[id].sample(now) * TILE
 		var info: Dictionary = _info.get(id, {})
 		var is_self: bool = int(id) == _you
 		var monster: bool = String(info.get("kind", "")) == "monster"
-		var col := Color(0.9, 0.2, 0.2) if monster else (Color(0.3, 0.85, 1.0) if is_self else Color(0.4, 0.9, 0.4))
-		draw_circle(p, ENTITY_RADIUS, col)
-		if is_self:
-			draw_arc(p, ENTITY_RADIUS + 3, 0, TAU, 32, Color.WHITE, 2.0)
+		var col := Color(0.3, 0.85, 1.0) if is_self else Color(0.4, 0.9, 0.4)
+		var rad := ENTITY_RADIUS
 		var txt := String(info.get("name", ""))
-		draw_string(font, p + Vector2(-60, -ENTITY_RADIUS - 6), txt, HORIZONTAL_ALIGNMENT_CENTER, 120, 14, Color.WHITE)
+		if monster:
+			var mid := String(info.get("monsterId", ""))
+			var st := MapInfo.monster_style(mid)
+			col = st["color"]
+			rad = ENTITY_RADIUS * float(st["scale"])
+			if txt.is_empty():
+				txt = MapInfo.monster_name(_monsters, mid)
+		draw_circle(p, rad, col)
+		if is_self:
+			draw_arc(p, rad + 3, 0, TAU, 32, Color.WHITE, 2.0)
+		draw_string(font, p + Vector2(-60, -rad - 6), txt, HORIZONTAL_ALIGNMENT_CENTER, 120, 14, Color.WHITE)
 	if _tap_age < 0.6:
 		var a := 1.0 - _tap_age / 0.6
 		draw_arc(_tap_pos, 6 + _tap_age * 30, 0, TAU, 24, Color(1, 1, 1, a), 2.0)

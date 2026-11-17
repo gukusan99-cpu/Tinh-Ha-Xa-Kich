@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 ## Điều khiển luồng màn hình: Đăng nhập -> Tạo nhân vật -> Thế giới -> Trận -> Thế giới.
 ## Chỉ hiển thị và gửi ý định; mọi kết quả do máy chủ quyết định.
 
@@ -184,6 +184,8 @@ func _on_message(msg: Dictionary) -> void:
 		"world_tick":
 			if _screen is WorldScreen:
 				_screen.on_tick(msg)
+		"portal_locked":
+			_show_toast(UiText.portal_locked(int(msg.get("levelRequired", 0))))
 		"challenge_sent", "challenge_received", "challenge_closed":
 			if _screen is WorldScreen:
 				_screen.on_challenge_message(msg)
@@ -209,3 +211,4 @@ func _on_message(msg: Dictionary) -> void:
 				_screen.on_error(code, text)
 			else:
 				_show_toast(UiText.server_error(code, text))
+

@@ -1,4 +1,4 @@
-class_name UiText
+﻿class_name UiText
 extends RefCounted
 ## Chuỗi giao diện tiếng Việt.
 
@@ -72,3 +72,12 @@ static func pvp_result(result: String) -> String:
 		"draw":
 			return "Hòa"
 	return result
+
+
+static func portal_locked(level_required: int) -> String:
+	return "Cần đạt cấp %d để vào" % level_required
+
+
+static func portal_lock_tag(level_required: int) -> String:
+	return "Khóa - Cấp %d" % level_required
+

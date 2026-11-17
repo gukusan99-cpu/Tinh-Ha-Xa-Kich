@@ -143,3 +143,16 @@ func _check(pairs: Array) -> Array:
 		if not p[0]:
 			errors.append(p[1])
 	return errors
+
+
+func test_map_info() -> Array:
+	var mons := {"am_thach_gai": {"ten": "Gai"}, "am_thach_lon": {"ten": "Lon"}}
+	return _check([
+		[MapInfo.map_path("ban-do", "vung_san_1") == "res://data/ban-do/vung-san-1.json", "đường dẫn bản đồ"],
+		[MapInfo.map_name("thanh") != "" and MapInfo.map_name("khong_co") == "khong_co", "tên bản đồ / rơi về id"],
+		[MapInfo.monster_id_by_name(mons, "Lon") == "am_thach_lon" and MapInfo.monster_id_by_name(mons, "x") == "", "tìm quái theo tên"],
+		[MapInfo.monster_style("am_thach_lon")["scale"] > MapInfo.monster_style("la")["scale"], "quái lớn to hơn mặc định"],
+		[MapInfo.monster_style("am_thach_gai")["color"] != MapInfo.monster_style("am_thach_lon")["color"], "màu khác nhau"],
+		[MapInfo.portal_is_locked(2, 1) and not MapInfo.portal_is_locked(2, 2) and not MapInfo.portal_is_locked(0, 1), "khóa cổng theo cấp"],
+		[UiText.portal_locked(2) == "Cần đạt cấp 2 để vào", "toast cổng khóa"],
+	])
