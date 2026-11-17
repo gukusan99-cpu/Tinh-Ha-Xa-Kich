@@ -1,8 +1,15 @@
-/** Giao thức Giai đoạn 0 (xem docs/06-kien-truc.md). */
+/** Giao thức Giai đoạn 0 + 1 (xem docs/06-kien-truc.md). */
+import type { TurnResult } from "./battle/types.js";
 
 export const PROTOCOL_VERSION = 1;
 export const MAX_MESSAGE_BYTES = 4096;
 export const MAX_CLIENT_VERSION_LENGTH = 32;
+
+/** Giới hạn thô của chuỗi trong thông điệp tài khoản; luật chi tiết kiểm ở tầng tài khoản. */
+const MAX_RAW_STRING = 256;
+/** Góc cực đoan bị từ chối ở tầng giao thức; góc hợp lý được máy chủ kẹp theo dữ liệu. */
+const MAX_ABS_ANGLE = 360;
+const MAX_ABS_COORD = 1e6;
 
 export type ErrorCode =
   | "bad_json"
@@ -10,7 +17,27 @@ export type ErrorCode =
   | "bad_message"
   | "not_hello"
   | "unknown_type"
-  | "too_large";
+  | "too_large"
+  | "not_allowed";
+
+// ---------- luật chuỗi ----------
+
+const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
+export const validateUsername = (s: string): boolean => USERNAME_RE.test(s);
+export const validatePassword = (s: string): boolean => {
+  const n = Array.from(s).length;
+  return n >= 6 && n <= 64;
+};
+/** Trim, 2-16 ký tự (theo code point), không ký tự điều khiển. Trả null nếu sai. */
+export function normalizeCharacterName(s: string): string | null {
+  const t = s.trim();
+  const n = Array.from(t).length;
+  if (n < 2 || n > 16) return null;
+  if (/[\p{C}\p{Zl}\p{Zp}]/u.test(t)) return null;
+  return t;
+}
+
+// ---------- C→S ----------
 
 export interface HelloMessage {
   v: 1;
@@ -22,7 +49,85 @@ export interface PingMessage {
   type: "ping";
   seq: number;
 }
-export type ClientMessage = HelloMessage | PingMessage;
+export interface RegisterMessage {
+  v: 1;
+  type: "register";
+  username: string;
+  password: string;
+}
+export interface LoginMessage {
+  v: 1;
+  type: "login";
+  username: string;
+  password: string;
+}
+export interface CreateCharacterMessage {
+  v: 1;
+  type: "create_character";
+  name: string;
+  sign: string;
+}
+export interface EnterWorldMessage {
+  v: 1;
+  type: "enter_world";
+}
+export interface MoveToMessage {
+  v: 1;
+  type: "move_to";
+  x: number;
+  y: number;
+}
+export interface BattleMoveMessage {
+  v: 1;
+  type: "battle_move";
+  col: number;
+}
+export interface BattleShotMessage {
+  v: 1;
+  type: "battle_shot";
+  angle: number;
+  power: number;
+  facing: -1 | 1;
+}
+export type ClientMessage =
+  | HelloMessage
+  | PingMessage
+  | RegisterMessage
+  | LoginMessage
+  | CreateCharacterMessage
+  | EnterWorldMessage
+  | MoveToMessage
+  | BattleMoveMessage
+  | BattleShotMessage;
+
+// ---------- S→C ----------
+
+export interface Character {
+  name: string;
+  sign: string;
+  level: number;
+  exp: number;
+  gunId: string;
+}
+export interface Entity {
+  id: number;
+  kind: "player" | "monster";
+  name: string;
+  x: number;
+  y: number;
+  monsterId?: string;
+}
+export interface UnitInfo {
+  id: number;
+  kind: "player" | "monster";
+  name: string;
+  team: 0 | 1;
+  col: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  facing: -1 | 1;
+}
 
 export interface WelcomeMessage {
   v: 1;
@@ -43,11 +148,93 @@ export interface ErrorMessage {
   code: ErrorCode;
   message: string;
 }
-export type ServerMessage = WelcomeMessage | PongMessage | ErrorMessage;
+export interface AuthOkMessage {
+  v: 1;
+  type: "auth_ok";
+  username: string;
+  character: Character | null;
+}
+export type AuthErrorCode = "taken" | "bad_credentials" | "invalid";
+export interface AuthErrorMessage {
+  v: 1;
+  type: "auth_error";
+  code: AuthErrorCode;
+}
+export interface CharacterMessage {
+  v: 1;
+  type: "character";
+  character: Character;
+}
+export interface WorldStateMessage {
+  v: 1;
+  type: "world_state";
+  mapId: string;
+  width: number;
+  height: number;
+  rows: string[];
+  you: number;
+  entities: Entity[];
+}
+export interface WorldTickMessage {
+  v: 1;
+  type: "world_tick";
+  entities: Entity[];
+}
+export interface MatchStartMessage {
+  v: 1;
+  type: "match_start";
+  matchId: string;
+  map: { width: number; height: number; rows: string[] };
+  units: UnitInfo[];
+  you: number;
+  maxTurns: number;
+}
+export interface PhaseMessage {
+  v: 1;
+  type: "phase";
+  turn: number;
+  phase: "move" | "aim";
+  deadline: number;
+  serverTime: number;
+}
+export interface MovesResultMessage {
+  v: 1;
+  type: "moves_result";
+  turn: number;
+  moves: { unitId: number; path: number[]; col: number; y: number }[];
+}
+export type TurnResultMessage = { v: 1; type: "turn_result" } & TurnResult;
+export interface MatchEndMessage {
+  v: 1;
+  type: "match_end";
+  matchId: string;
+  result: "win" | "lose" | "draw";
+  rewards: { exp: number };
+  character: Character;
+}
+export type ServerMessage =
+  | WelcomeMessage
+  | PongMessage
+  | ErrorMessage
+  | AuthOkMessage
+  | AuthErrorMessage
+  | CharacterMessage
+  | WorldStateMessage
+  | WorldTickMessage
+  | MatchStartMessage
+  | PhaseMessage
+  | MovesResultMessage
+  | TurnResultMessage
+  | MatchEndMessage;
+
+// ---------- parse ----------
 
 export type ParseResult = { ok: true; message: ClientMessage } | { ok: false; code: ErrorCode };
 
 const fail = (code: ErrorCode): ParseResult => ({ ok: false, code });
+const bad = (): ParseResult => fail("bad_message");
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isRawString = (v: unknown): v is string => typeof v === "string" && v.length <= MAX_RAW_STRING;
 
 /** Kiểm tra từng trường bằng tay; không tin bất cứ gì từ client. */
 export function parseClientMessage(raw: string | Buffer): ParseResult {
@@ -61,24 +248,54 @@ export function parseClientMessage(raw: string | Buffer): ParseResult {
     return fail("bad_json");
   }
 
-  if (typeof data !== "object" || data === null || Array.isArray(data)) return fail("bad_message");
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return bad();
   const obj = data as Record<string, unknown>;
 
   if (obj.v !== PROTOCOL_VERSION) return fail("bad_version");
-  if (typeof obj.type !== "string") return fail("bad_message");
+  if (typeof obj.type !== "string") return bad();
 
   switch (obj.type) {
     case "hello": {
       const cv = obj.clientVersion;
-      if (typeof cv !== "string" || cv.length === 0 || cv.length > MAX_CLIENT_VERSION_LENGTH) {
-        return fail("bad_message");
-      }
+      if (typeof cv !== "string" || cv.length === 0 || cv.length > MAX_CLIENT_VERSION_LENGTH) return bad();
       return { ok: true, message: { v: 1, type: "hello", clientVersion: cv } };
     }
     case "ping": {
       const seq = obj.seq;
-      if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) return fail("bad_message");
+      if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) return bad();
       return { ok: true, message: { v: 1, type: "ping", seq } };
+    }
+    case "register":
+    case "login": {
+      const { username, password } = obj;
+      if (!isRawString(username) || !isRawString(password)) return bad();
+      return { ok: true, message: { v: 1, type: obj.type, username, password } };
+    }
+    case "create_character": {
+      const { name, sign } = obj;
+      if (!isRawString(name) || !isRawString(sign) || sign === "") return bad();
+      const n = normalizeCharacterName(name);
+      if (n === null) return bad();
+      return { ok: true, message: { v: 1, type: "create_character", name: n, sign } };
+    }
+    case "enter_world":
+      return { ok: true, message: { v: 1, type: "enter_world" } };
+    case "move_to": {
+      const { x, y } = obj;
+      if (!isNum(x) || !isNum(y) || Math.abs(x) > MAX_ABS_COORD || Math.abs(y) > MAX_ABS_COORD) return bad();
+      return { ok: true, message: { v: 1, type: "move_to", x, y } };
+    }
+    case "battle_move": {
+      const col = obj.col;
+      if (typeof col !== "number" || !Number.isSafeInteger(col)) return bad();
+      return { ok: true, message: { v: 1, type: "battle_move", col } };
+    }
+    case "battle_shot": {
+      const { angle, power, facing } = obj;
+      if (!isNum(angle) || Math.abs(angle) > MAX_ABS_ANGLE) return bad();
+      if (!isNum(power) || power < 0 || power > 100) return bad();
+      if (facing !== 1 && facing !== -1) return bad();
+      return { ok: true, message: { v: 1, type: "battle_shot", angle, power, facing } };
     }
     default:
       return fail("unknown_type");

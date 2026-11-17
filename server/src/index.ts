@@ -10,7 +10,9 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
 const server = await createServer({ port });
 console.log(`Tinh Hà Xạ Kích server v${SERVER_VERSION} đang lắng nghe ở cổng ${server.port}`);
 
-process.on("SIGINT", () => {
+const shutdown = (): void => {
   console.log("Đang tắt máy chủ...");
   void server.close().then(() => process.exit(0));
-});
+};
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
