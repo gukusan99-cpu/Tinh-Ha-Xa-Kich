@@ -126,7 +126,7 @@ func _send_aim() -> void:
 	var facing := 1 if dx >= 0 else -1
 	var v := sqrt(absf(dx) * GRAVITY)  # tầm xa 45° trên mặt phẳng
 	var power := clampf(v / MAX_SPEED * 100.0, 10.0, 100.0)
-	_net.send_json(Protocol.build_battle_shot(45.0, power, facing))
+	_net.send_json(Protocol.build_battle_shot(45.0, power, facing, "thuoc_no_nho"))
 
 
 func _process(delta: float) -> bool:

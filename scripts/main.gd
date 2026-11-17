@@ -118,6 +118,7 @@ func _show_login() -> void:
 func _show_character() -> void:
 	var s := CharacterScreen.new()
 	s.signs = signs
+	s.guns = GameData.load_guns()
 	_set_screen(s)
 
 

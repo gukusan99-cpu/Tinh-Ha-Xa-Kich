@@ -97,11 +97,12 @@ func test_build_battle_move() -> Array:
 
 
 func test_build_battle_shot() -> Array:
-	var d: Dictionary = JSON.parse_string(Protocol.build_battle_shot(45.0, 60.0, -1))
-	var hi: Dictionary = JSON.parse_string(Protocol.build_battle_shot(10.0, 250.0, 5))
-	var lo: Dictionary = JSON.parse_string(Protocol.build_battle_shot(10.0, -3.0, 0))
+	var d: Dictionary = JSON.parse_string(Protocol.build_battle_shot(45.0, 60.0, -1, "sung_nang"))
+	var hi: Dictionary = JSON.parse_string(Protocol.build_battle_shot(10.0, 250.0, 5, "x"))
+	var lo: Dictionary = JSON.parse_string(Protocol.build_battle_shot(10.0, -3.0, 0, "x"))
 	return _check([
 		[d["type"] == "battle_shot", "type sai"],
+		[d["gunId"] == "sung_nang", "gunId sai"],
 		[is_equal_approx(float(d["angle"]), 45.0) and is_equal_approx(float(d["power"]), 60.0), "angle/power sai"],
 		[int(d["facing"]) == -1, "facing -1"],
 		[is_equal_approx(float(hi["power"]), 100.0) and int(hi["facing"]) == 1, "power kẹp 100, facing chuẩn hoá +1"],
@@ -109,9 +110,21 @@ func test_build_battle_shot() -> Array:
 	])
 
 
+func test_build_aim_preview() -> Array:
+	var d: Dictionary = JSON.parse_string(Protocol.build_aim_preview("sung_kinh", 33.0, 140.0, -7))
+	return _check([
+		[d["type"] == "aim_preview", "type sai"],
+		[d["gunId"] == "sung_kinh", "gunId sai"],
+		[is_equal_approx(float(d["angle"]), 33.0), "angle sai"],
+		[is_equal_approx(float(d["power"]), 100.0), "power kẹp 100"],
+		[int(d["facing"]) == -1, "facing chuẩn hoá -1"],
+		[int(d["v"]) == 1, "v sai"],
+	])
+
+
 func test_client_messages_under_limit() -> Array:
 	var ok := true
-	for s in [Protocol.build_register("a".repeat(16), "p".repeat(64)), Protocol.build_battle_shot(45.123456, 99.5, 1)]:
+	for s in [Protocol.build_register("a".repeat(16), "p".repeat(64)), Protocol.build_battle_shot(45.123456, 99.5, 1, "phao_sao_bang"), Protocol.build_aim_preview("sung_kinh", 45.1, 50.0, 1)]:
 		ok = ok and s.to_utf8_buffer().size() <= Protocol.MAX_MESSAGE_BYTES
 	return _check([[ok, "thông điệp C→S phải ≤ 4 KB"]])
 

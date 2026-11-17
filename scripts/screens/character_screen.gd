@@ -3,6 +3,7 @@ extends Control
 ## Tạo nhân vật: tên + chọn cung (khoá vĩnh viễn).
 
 var signs: Array = []
+var guns := {}  # id súng -> dữ liệu (để hiện tên súng)
 var _name: LineEdit
 var _status: Label
 var _create_btn: Button
@@ -21,7 +22,7 @@ func _ready() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(560, 0)
+	box.custom_minimum_size = Vector2(760, 0)
 	box.add_theme_constant_override("separation", 14)
 	center.add_child(box)
 
@@ -41,13 +42,21 @@ func _ready() -> void:
 	var group := ButtonGroup.new()
 	for s in signs:
 		var d: Dictionary = s
-		var b := UiKit.button(String(d.get("ten", d.get("id", "?"))), 28, 72.0)
+		var cell := VBoxContainer.new()
+		cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cell.add_theme_constant_override("separation", 4)
+		var b := UiKit.button(String(d.get("ten", d.get("id", "?"))), 28, 64.0)
 		b.toggle_mode = true
 		b.button_group = group
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var sid := String(d.get("id", ""))
 		b.pressed.connect(func(): _selected = sid)
-		grid.add_child(b)
+		cell.add_child(b)
+		var info := UiKit.label(GunInfo.sign_summary(d, guns), 16, Color(0.8, 0.85, 0.95))
+		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		info.custom_minimum_size = Vector2(340, 0)
+		cell.add_child(info)
+		grid.add_child(cell)
 		_sign_buttons[sid] = b
 
 	var warn := UiKit.label("Cảnh báo: cung đã chọn là vĩnh viễn, không thể đổi sau khi tạo.", 22, Color(1, 0.8, 0.3))

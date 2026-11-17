@@ -59,9 +59,15 @@ static func build_battle_move(col: int) -> String:
 
 
 ## angle: độ; power: 0..100 (kẹp); facing: -1 hoặc 1 (giá trị khác được chuẩn hoá theo dấu).
-static func build_battle_shot(angle: float, power: float, facing: int) -> String:
+static func build_battle_shot(angle: float, power: float, facing: int, gun_id: String) -> String:
 	var f := -1 if facing < 0 else 1
-	return _encode("battle_shot", {"angle": angle, "power": clampf(power, 0.0, 100.0), "facing": f})
+	return _encode("battle_shot", {"angle": angle, "power": clampf(power, 0.0, 100.0), "facing": f, "gunId": gun_id})
+
+
+## Xin đường ngắm dự đoán (chỉ có tác dụng khi có hiệu ứng Ngắm chuẩn; máy chủ giới hạn tần suất).
+static func build_aim_preview(gun_id: String, angle: float, power: float, facing: int) -> String:
+	var f := -1 if facing < 0 else 1
+	return _encode("aim_preview", {"gunId": gun_id, "angle": angle, "power": clampf(power, 0.0, 100.0), "facing": f})
 
 
 ## Trả về Dictionary đã kiểm tra hợp lệ, hoặc {} nếu text không hợp lệ. Giới hạn 4 KB.

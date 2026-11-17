@@ -33,6 +33,17 @@ static func load_balance() -> Dictionary:
 	return out
 
 
+## id súng -> dòng dữ liệu (chỉ để hiển thị tên, nội lực, hồi chiêu).
+static func load_guns() -> Dictionary:
+	var out := {}
+	var d: Variant = load_json("res://data/sung.json")
+	if typeof(d) == TYPE_DICTIONARY and d.has("guns") and typeof(d["guns"]) == TYPE_ARRAY:
+		for g in d["guns"]:
+			if typeof(g) == TYPE_DICTIONARY and g.has("id"):
+				out[String(g["id"])] = g
+	return out
+
+
 static func load_signs() -> Array:
 	var d: Variant = load_json("res://data/nhan-vat.json")
 	if typeof(d) == TYPE_DICTIONARY and d.has("signs") and typeof(d["signs"]) == TYPE_ARRAY:
