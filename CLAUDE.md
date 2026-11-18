@@ -40,6 +40,7 @@ Máy chủ (chạy trong `server/`):
 
 Client Godot (chạy ở thư mục gốc):
 - Mở editor: `& $godot --path . --editor`
+- Xuất bản Web: `& $godot --headless --path . --export-release "Web" build/web/index.html` (export template 4.7.2 đã cài, chỉ bản Web). Sau đó `npm start` trong `server/` tự phục vụ trang ở `http://localhost:8080/` cùng cổng WebSocket.
 - Test đơn vị: `& $godot --headless --path . --script res://tests/run_tests.gd`
 - Test nối máy chủ (cần máy chủ đang chạy): `& $godot --headless --path . --script res://tests/e2e_probe.gd`
 - Bot chơi hết luồng (cần máy chủ đang chạy, khoảng 1–2 phút): `& $godot --headless --path . --script res://tests/e2e_full.gd`. Bỏ `--headless` và đặt `$env:E2E_SHOTS=<thư mục>` để chụp màn hình.
