@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createStaticHandler } from "./static.js";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { AccountService, MemoryAccountStore, type AccountStore } from "./accounts.js";
 import { realClock, type Clock } from "./clock.js";
@@ -43,6 +45,8 @@ export interface ServerOptions {
   seed?: () => number;
   /** Nguồn ngẫu nhiên [0,1) cho súng rơi; mặc định crypto. */
   dropRandom?: () => number;
+  /** Thư mục bản xuất Web (build/web). Có thì phục vụ trang Web cùng cổng với WebSocket. */
+  staticDir?: string;
 }
 
 export interface GameServer {
@@ -429,7 +433,11 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
   }
 
   return new Promise((resolve, reject) => {
-    const wss = new WebSocketServer({ port: opts.port, host: opts.host, maxPayload: MAX_MESSAGE_BYTES });
+    const http = opts.staticDir ? createHttpServer(createStaticHandler(opts.staticDir)) : null;
+    const wss = http
+      ? new WebSocketServer({ server: http, maxPayload: MAX_MESSAGE_BYTES })
+      : new WebSocketServer({ port: opts.port, host: opts.host, maxPayload: MAX_MESSAGE_BYTES });
+    if (http) http.listen(opts.port, opts.host);
 
     wss.on("connection", (ws) => {
       const s: Session = {
@@ -541,7 +549,7 @@ export function createServer(opts: ServerOptions): Promise<GameServer> {
             for (const m of matches) m.abort();
             matches.clear();
             for (const c of wss.clients) c.terminate();
-            wss.close(() => res());
+            wss.close(() => (http ? http.close(() => res()) : res()));
           }),
       });
     });
