@@ -3,6 +3,14 @@
 ## Giai đoạn hiện tại
 **Giai đoạn 2:** đã có đủ 4 cung với 12 súng, nội lực, hiệu ứng trạng thái và nội tại (`docs/07`), đã cân bằng PvE bằng mô phỏng. Đã có thách đấu PvP, vùng săn thứ hai và súng chung. **Giai đoạn 2 xong về tính năng**; còn chờ người dùng xác nhận `docs/10` và chơi thử. Giai đoạn 3 (thử nghiệm qua link Web) cần quyết định của người dùng về máy chủ triển khai, cài PostgreSQL/Redis và export template Web. Giai đoạn 0 và 1 đã xong.
 
+## Việc tiếp theo (cập nhật 2026-11-20)
+1. **Hình ảnh đợt 1:** người dùng đang tạo ảnh bằng Gemini theo `docs/11-prompt-hinh-anh.md`, lưu vào `assets/goc/`. Khi có ảnh: tách nền #FF00FF, thu nhỏ, đưa vào `assets/` và thay hình khối tạm ở màn thế giới và màn trận. Ảnh thiếu thì giữ hình tạm.
+2. **Chờ người dùng xác nhận `docs/10`** (cách có súng chung).
+3. **Chơi thử qua LAN:** bản Web đã xuất ở `build/web`; `npm start` trong `server/` phục vụ ở cổng 8080 (máy: http://localhost:8080/, điện thoại cùng Wi-Fi: IP LAN của máy, lúc viết là 192.168.100.229). Tài khoản lưu trong bộ nhớ, mất khi tắt máy chủ.
+4. **Giai đoạn 3** cần người dùng quyết định nơi triển khai và cài PostgreSQL/Redis.
+
+Ghi chú môi trường: lệnh cài toàn cục chạy từ công cụ của Claude có thể chỉ nằm trong sandbox; cài phần mềm cho máy thật thì chạy trong terminal của người dùng (`npm.cmd`, vì PowerShell chặn `npm.ps1`). Gemini CLI đã cài nhưng không đăng nhập được bằng tài khoản cá nhân; quy trình hình ảnh là Claude viết prompt, người dùng tự chạy trong ứng dụng Gemini.
+
 ## Giai đoạn 2
 - [x] Đặc tả `07-cung-va-sung.md`; 4 cung, 12 súng cung, nội lực, hồi chiêu, hiệu ứng, nội tại, đường ngắm Súng kính.
 - [x] Máy chủ, client, mô phỏng theo từng cung; cân bằng PvE v2.
